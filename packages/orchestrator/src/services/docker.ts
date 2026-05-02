@@ -1,5 +1,7 @@
 import Docker from 'dockerode'
-import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { db } from '../db/index.js'
 import { bots } from '../db/schema.js'
 import { sql } from 'drizzle-orm'
@@ -8,8 +10,55 @@ const DOCKER_SOCKET = process.env['DOCKER_SOCKET'] ?? '/var/run/docker.sock'
 const DOCKER_NETWORK = process.env['DOCKER_NETWORK'] ?? 'yeap-net'
 const BOT_IMAGE = process.env['BOT_IMAGE'] ?? 'yeap-bot:latest'
 const SECRETS_PATH = process.env['SECRETS_PATH'] ?? '/data/secrets.json'
+const NGINX_BOTS_CONTAINER = process.env['NGINX_BOTS_CONTAINER'] ?? 'yeap-nginx-bots'
+const NGINX_CONF_DIR = '/data/nginx-bots'
+const HTPASSWD_PATH = '/data/htpasswd'
 
 export const docker = new Docker({ socketPath: DOCKER_SOCKET })
+
+// Ensure the nginx bot config directory exists at startup
+mkdirSync(NGINX_CONF_DIR, { recursive: true })
+
+/** Write /data/htpasswd using the plaintext YEAP master password (SHA1 format). */
+export function writeHtpasswd(plainPassword: string): void {
+  const sha1 = createHash('sha1').update(plainPassword).digest('base64')
+  writeFileSync(HTPASSWD_PATH, `yeap:{SHA}${sha1}\n`, 'utf8')
+}
+
+/** Write a per-bot nginx server block for the given host port. */
+export function writeNginxBotConfig(name: string, hostPort: number): void {
+  const cname = containerName(name)
+  const conf = `server {
+    listen ${hostPort};
+    auth_basic "YEAP";
+    auth_basic_user_file ${HTPASSWD_PATH};
+    location / {
+        proxy_pass http://${cname}:4096/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 300s;
+    }
+}\n`
+  writeFileSync(join(NGINX_CONF_DIR, `${hostPort}.conf`), conf, 'utf8')
+}
+
+/** Remove the nginx server block for the given host port. */
+export function deleteNginxBotConfig(hostPort: number): void {
+  try { unlinkSync(join(NGINX_CONF_DIR, `${hostPort}.conf`)) } catch { /* already gone */ }
+}
+
+/** Signal the nginx-bots container to reload its configuration. */
+export async function reloadNginxBots(): Promise<void> {
+  try {
+    const nginx = docker.getContainer(NGINX_BOTS_CONTAINER)
+    const exec = await nginx.exec({ Cmd: ['nginx', '-s', 'reload'], AttachStdout: false, AttachStderr: false })
+    await exec.start({ Detach: true })
+  } catch (err) {
+    console.warn('nginx-bots reload skipped (container may not be running yet):', err)
+  }
+}
 
 type Secrets = { provider: string; model: string; api_key: string }
 
@@ -77,7 +126,6 @@ export async function createAndStartBotContainer(
     ],
     HostConfig: {
       NetworkMode: DOCKER_NETWORK,
-      PortBindings: { '4096/tcp': [{ HostIp: '0.0.0.0', HostPort: String(hostPort) }] },
       Mounts: [
         { Type: 'volume', Source: skilletVolume, Target: '/skillet' },
         { Type: 'volume', Source: 'yeap-shared', Target: '/shared' },
@@ -88,6 +136,8 @@ export async function createAndStartBotContainer(
   }) as unknown as Docker.Container
 
   await container.start()
+  writeNginxBotConfig(name, hostPort)
+  await reloadNginxBots()
   return container.id
 }
 
@@ -127,7 +177,6 @@ export async function createAndStartCoordinatorContainer(
     ],
     HostConfig: {
       NetworkMode: DOCKER_NETWORK,
-      PortBindings: { '4096/tcp': [{ HostIp: '0.0.0.0', HostPort: String(hostPort) }] },
       Mounts: [
         { Type: 'volume', Source: skilletVolume, Target: '/skillet' },
         { Type: 'volume', Source: 'yeap-shared', Target: '/shared' },
@@ -138,6 +187,8 @@ export async function createAndStartCoordinatorContainer(
   }) as unknown as Docker.Container
 
   await container.start()
+  writeNginxBotConfig(name, hostPort)
+  await reloadNginxBots()
   return container.id
 }
 

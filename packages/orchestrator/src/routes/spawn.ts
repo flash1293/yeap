@@ -4,7 +4,7 @@ import { bots, subscriptions, spawn_log } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { generateBotIcon } from '@yeap/shared'
-import { createAndStartBotContainer, allocateHostPort, stopAndRemoveBotContainer } from '../services/docker.js'
+import { createAndStartBotContainer, allocateHostPort, stopAndRemoveBotContainer, deleteNginxBotConfig, reloadNginxBots } from '../services/docker.js'
 import { getBotByName } from '../db/helpers.js'
 import type { SpawnPayload } from '@yeap/shared'
 
@@ -92,6 +92,11 @@ spawnRouter.delete('/:name', async (c) => {
   } catch (err) {
     console.error('Failed to stop/remove bot container:', err)
     return c.json({ error: 'Failed to stop container. Check Docker.' }, 500)
+  }
+
+  if (bot.host_port !== null) {
+    deleteNginxBotConfig(bot.host_port)
+    await reloadNginxBots()
   }
 
   // Remove bot and cascades (subscriptions) from DB

@@ -110,3 +110,20 @@ services:
     depends_on:
       - orchestrator
       - reminder
+
+  # ── nginx-bots (auth proxy in front of each bot's OpenCode port) ───────────
+  nginx-bots:
+    image: nginx:alpine
+    container_name: yeap-nginx-bots
+    # Pre-bind the full port range used for bot OpenCode UIs (up to 64 bots)
+    ports:
+      - "40960-41023:40960-41023"
+    volumes:
+      - ./nginx-bots.conf:/etc/nginx/nginx.conf:ro
+      - yeap-data:/data:ro
+    networks:
+      - yeap-net
+    restart: unless-stopped
+    depends_on:
+      orchestrator:
+        condition: service_healthy

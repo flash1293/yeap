@@ -7,7 +7,7 @@ import { v4 as uuid } from 'uuid'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { generateBotIcon } from '@yeap/shared'
-import { createAndStartCoordinatorContainer, allocateHostPort } from '../services/docker.js'
+import { createAndStartCoordinatorContainer, allocateHostPort, writeHtpasswd } from '../services/docker.js'
 import { writeYeapDocs } from '../services/docs.js'
 import type { SetupInitPayload } from '@yeap/shared'
 
@@ -69,11 +69,12 @@ setupRouter.post('/init', async (c) => {
     'utf8',
   )
 
-  // Store password hash
+  // Store password hash and write nginx Basic Auth credentials
   db.insert(settings)
     .values({ key: 'password_hash', value: password_hash })
     .onConflictDoUpdate({ target: settings.key, set: { value: password_hash } })
     .run()
+  writeHtpasswd(body.pwa_password)
 
   // Create coordinator bot record
   const bot_id = uuid()
