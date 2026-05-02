@@ -1,0 +1,31 @@
+{
+  "name": "@yeap/pwa",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@yeap/shared": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-router": "^7",
+    "zustand": "^5",
+    "react-markdown": "^9"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4",
+    "vite-plugin-pwa": "^0.21",
+    "typescript": "^5.5",
+    "vite": "^6",
+    "@tailwindcss/vite": "^4",
+    "tailwindcss": "^4"
+  }
+}

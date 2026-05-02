@@ -1,0 +1,20 @@
+{
+  "name": "yeap",
+  "private": true,
+  "scripts": {
+    "build:bot-image": "docker build -f infra/bot.Dockerfile -t yeap-bot:latest .",
+    "dev": "pnpm build:bot-image && docker compose -f infra/docker-compose.yml up --build",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "turbo": "^2",
+    "typescript": "^5.5"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=9"
+  }
+}

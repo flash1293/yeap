@@ -1,0 +1,31 @@
+{
+  "name": "@yeap/orchestrator",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "dev": "node --watch dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@yeap/shared": "workspace:*",
+    "hono": "^4",
+    "@hono/node-server": "^1",
+    "drizzle-orm": "^0.41",
+    "better-sqlite3": "^11",
+    "dockerode": "^4",
+    "jose": "^5",
+    "bcryptjs": "^3",
+    "uuid": "^11"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7",
+    "@types/bcryptjs": "^2",
+    "@types/dockerode": "^3",
+    "@types/node": "^22",
+    "@types/uuid": "^10",
+    "typescript": "^5.5"
+  }
+}

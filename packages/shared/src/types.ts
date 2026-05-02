@@ -1,0 +1,174 @@
+// ── Bot ───────────────────────────────────────────────────────────────────────
+
+export type BotStatus = 'online' | 'offline' | 'busy' | (string & {})
+
+export type Bot = {
+  id: string
+  name: string
+  svg_icon: string
+  role_description: string
+  status: BotStatus
+  last_seen: number | null
+  opencode_url: string | null
+  host_port: number | null
+  session_id: string | null
+  is_coordinator: boolean
+  subscriptions: string[]
+}
+
+export type Subscription = {
+  bot_id: string
+  topic_id: string
+}
+
+export type SpawnLog = {
+  id: string
+  requested_by: string
+  bot_name: string
+  role: string
+  model: string
+  timestamp: number
+  container_id: string | null
+}
+
+// ── FSAD messages ─────────────────────────────────────────────────────────────
+
+export type MessageType = 'text' | 'alert' | 'status'
+
+export type MessageMeta = {
+  type: MessageType
+  trace_id?: string
+  reminder_id?: string
+}
+
+export type FsadMessage = {
+  topic_id: string
+  author_name: string
+  timestamp: string
+  path: string
+  relative_path: string
+  content: string
+  meta: MessageMeta | null
+  replies: FsadMessage[]
+}
+
+// ── FSAD events (SSE) ─────────────────────────────────────────────────────────
+
+export type FsadEventType = 'new_message' | 'new_reply' | 'connected'
+
+export type FsadEvent =
+  | { type: 'connected' }
+  | {
+      type: 'new_message' | 'new_reply'
+      topic_id: string
+      author_name: string
+      timestamp: string
+      message_path: string
+      parent_path?: string
+      content: string
+      meta: MessageMeta | null
+    }
+
+// ── Setup ─────────────────────────────────────────────────────────────────────
+
+export type SetupStatus = {
+  initialized: boolean
+}
+
+export type SetupInitPayload = {
+  coordinator_name: string
+  provider: string
+  model: string
+  api_key: string
+  pwa_password: string
+}
+
+// ── Reminders ─────────────────────────────────────────────────────────────────
+
+export type SetReminderPayload = {
+  bot_name: string
+  topic_id: string
+  content: string
+  delay_ms?: number
+  fire_at?: number
+  cron?: string
+  author_mode?: 'bot' | 'Reminder'
+  meta_type?: 'text' | 'alert'
+}
+
+export type Reminder = {
+  id: string
+  bot_name: string
+  topic_id: string
+  content: string
+  fire_at: number | null
+  cron: string | null
+  next_fire_at: number | null
+  created_at: number
+  author_mode: 'bot' | 'Reminder'
+  meta_type: 'text' | 'alert'
+}
+
+// ── HTTP payloads — Orchestrator ──────────────────────────────────────────────
+
+export type LoginPayload = { password: string }
+export type LoginResponse = { token: string }
+
+export type RegisterBotPayload = {
+  name: string
+  role_description: string
+  opencode_url: string
+}
+export type RegisterBotResponse = { bot: Bot }
+
+export type UpdateBotPayload = {
+  status?: BotStatus
+  session_id?: string
+  last_seen?: number
+  opencode_url?: string
+}
+
+export type UpdateStatusPayload = { name: string; status: BotStatus }
+
+export type SpawnPayload = {
+  requested_by: string
+  name: string
+  role: string
+  model: string
+}
+export type SpawnResponse = {
+  container_id: string
+  bot: Bot
+}
+
+export type WebhookPayload = Record<string, unknown>
+
+export type PwaSendPayload = {
+  topic_id: string
+  content: string
+  author_name?: string
+  parent_path?: string
+}
+
+export type SubscribePayload = {
+  bot_name: string
+  topic_id: string
+}
+
+export type UnsubscribePayload = {
+  bot_name: string
+  topic_id: string
+}
+
+// ── HTTP payloads — Reminder ──────────────────────────────────────────────────
+
+export type FileNode = {
+  name: string
+  path: string
+  is_dir: boolean
+  modified_at: number
+}
+
+export type FileContentResponse = {
+  content: string
+}

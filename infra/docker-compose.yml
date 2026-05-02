@@ -1,0 +1,112 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Named volumes
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  yeap-data:
+    name: yeap-data
+  yeap-shared:
+    name: yeap-shared
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Network
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  yeap-net:
+    driver: bridge
+    name: yeap-net
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Services
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+
+  # ── Jaeger (observability) ─────────────────────────────────────────────────
+  jaeger:
+    image: cr.jaegertracing.io/jaegertracing/jaeger:2.17.0
+    container_name: yeap-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4318:4318"     # OTLP HTTP
+    networks:
+      - yeap-net
+    restart: unless-stopped
+
+  # ── Orchestrator ──────────────────────────────────────────────────────────
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: packages/orchestrator/Dockerfile
+    container_name: yeap-orchestrator
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET env var is required}"
+      DB_PATH: "/data/registry.db"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+    volumes:
+      - yeap-data:/data
+      - yeap-shared:/shared
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - yeap-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/setup/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      - jaeger
+
+  # ── Reminder ──────────────────────────────────────────────────────────────
+  reminder:
+    build:
+      context: ..
+      dockerfile: packages/reminder/Dockerfile
+    container_name: yeap-reminder
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      ORCHESTRATOR_URL: "http://orchestrator:3000"
+      DB_PATH: "/data/reminders.db"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+    volumes:
+      - yeap-data:/data
+      - yeap-shared:/shared
+    networks:
+      - yeap-net
+    restart: unless-stopped
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+
+  # ── Bot image (pre-built so the orchestrator can spawn containers from it) ──
+  bot:
+    build:
+      context: ..
+      dockerfile: infra/bot.Dockerfile
+    image: yeap-bot:latest
+    # This service only exists to produce the yeap-bot:latest image.
+    # The orchestrator spawns real bot containers dynamically via the Docker socket.
+    entrypoint: ["true"]
+    restart: "no"
+
+  # ── PWA ────────────────────────────────────────────────────────────────────
+  pwa:
+    build:
+      context: ..
+      dockerfile: packages/pwa/Dockerfile
+    container_name: yeap-pwa
+    ports:
+      - "5173:80"
+    networks:
+      - yeap-net
+    restart: unless-stopped
+    depends_on:
+      - orchestrator
+      - reminder
