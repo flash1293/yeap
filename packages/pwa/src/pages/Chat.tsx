@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { getBots, sendMessage } from '../api/orchestrator.js'
 import { subscribeEvents, listFiles } from '../api/reminder.js'
-import { loadTopic, loadTopics } from '../lib/fsad.js'
+import { loadTopicPage, loadTopics } from '../lib/fsad.js'
 import { BotStatusBar } from '../components/BotStatusBar.js'
 import { MessageBubble } from '../components/MessageBubble.js'
 import { MessageInput } from '../components/MessageInput.js'
@@ -20,6 +20,9 @@ export function Chat() {
   const [bots, setBots] = useState<Bot[]>([])
   const [messages, setMessages] = useState<FsadMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(20)
+  const [totalMessages, setTotalMessages] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -51,8 +54,12 @@ export function Chat() {
   // Load messages for current topic
   useEffect(() => {
     setLoadingMessages(true)
-    void loadTopic(topicId)
-      .then(setMessages)
+    setVisibleCount(20)
+    void loadTopicPage(topicId, 20)
+      .then(({ messages, total }) => {
+        setMessages(messages)
+        setTotalMessages(total)
+      })
       .finally(() => setLoadingMessages(false))
   }, [topicId])
 
@@ -61,7 +68,10 @@ export function Chat() {
     const unsub = subscribeEvents((event) => {
       if (event.type === 'connected') return
       if (event.topic_id === topicId) {
-        void loadTopic(topicId).then(setMessages)
+        void loadTopicPage(topicId, visibleCount).then(({ messages, total }) => {
+          setMessages(messages)
+          setTotalMessages(total)
+        })
       } else {
         // Track unread count for topics we're not currently viewing
         incrementUnread(event.topic_id)
@@ -91,7 +101,7 @@ export function Chat() {
       void loadTopics().then(setTopics)
     })
     return unsub
-  }, [topicId, incrementUnread])
+  }, [topicId, incrementUnread, visibleCount])
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -108,6 +118,19 @@ export function Chat() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  async function handleLoadMore() {
+    const nextCount = visibleCount + 20
+    setLoadingMore(true)
+    try {
+      const { messages, total } = await loadTopicPage(topicId, nextCount)
+      setMessages(messages)
+      setTotalMessages(total)
+      setVisibleCount(nextCount)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   async function handleSend(content: string) {
     await sendMessage({ topic_id: topicId, content })
@@ -334,6 +357,26 @@ export function Chat() {
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
           {loadingMessages && (
             <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
+          )}
+          {!loadingMessages && totalMessages > visibleCount && (
+            <div style={{ textAlign: 'center', marginBottom: 12 }}>
+              <button
+                onClick={() => void handleLoadMore()}
+                disabled={loadingMore}
+                style={{
+                  background: 'none',
+                  border: '1px solid var(--border)',
+                  borderRadius: 4,
+                  color: 'var(--text-muted)',
+                  cursor: loadingMore ? 'default' : 'pointer',
+                  fontSize: 12,
+                  padding: '4px 12px',
+                  opacity: loadingMore ? 0.6 : 1,
+                }}
+              >
+                {loadingMore ? 'Loading…' : `Load older messages (${totalMessages - visibleCount} more)`}
+              </button>
+            </div>
           )}
           {!loadingMessages && messages.length === 0 && (
             <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No messages yet in #{topicId}</p>

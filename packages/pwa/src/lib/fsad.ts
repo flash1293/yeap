@@ -21,6 +21,22 @@ export async function loadTopic(topic_id: string): Promise<FsadMessage[]> {
   return Promise.all(dirs.map((d) => loadMessage(d.path, topic_id)))
 }
 
+export async function loadTopicPage(
+  topic_id: string,
+  limit: number,
+): Promise<{ messages: FsadMessage[]; total: number }> {
+  const topic_path = `${CHAT_ROOT}/${topic_id}`
+  const entries = await listFiles(topic_path)
+  const dirs = entries
+    .filter((e) => e.is_dir)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const total = dirs.length
+  const slice = dirs.slice(Math.max(0, total - limit))
+  const messages = await Promise.all(slice.map((d) => loadMessage(d.path, topic_id)))
+  return { messages, total }
+}
+
 export async function loadTopics(): Promise<string[]> {
   const entries = await listFiles(CHAT_ROOT)
   return entries.filter((e) => e.is_dir).map((e) => e.name)

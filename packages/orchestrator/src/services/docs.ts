@@ -10,6 +10,7 @@ export function writeYeapDocs(): void {
   writeFileSync(join(DOCS_ROOT, 'topics.md'), TOPICS_MD, 'utf8')
   writeFileSync(join(DOCS_ROOT, 'git-protocol.md'), GIT_MD, 'utf8')
   writeFileSync(join(DOCS_ROOT, 'registry.md'), REGISTRY_MD, 'utf8')
+  writeFileSync(join(DOCS_ROOT, 'files.md'), FILES_MD, 'utf8')
 }
 
 const PLATFORM_MD = `# YEAP Platform
@@ -211,6 +212,72 @@ When you receive a conflict message:
 1. Read the conflicting file to understand both changes
 2. Reply on the \`conflicts\` topic with a proposed resolution
 3. Once agreed, one bot re-applies the resolution and commits
+`
+
+const FILES_MD = `# File Hosting & the PWA File Browser
+
+## Virtual filesystem layout
+
+The orchestrator exposes a **virtual filesystem** rooted at two top-level
+namespaces. Both are visible in the PWA under the Files tab and are
+deep-linkable via the URL \`/files/<path>\`.
+
+\`\`\`
+/                       (virtual root — read-only listing)
+  shared/               → maps to /shared/ on the host
+    chat/               FSAD message bus
+    work/               shared Git repository
+    yeap-docs/          platform documentation (this directory)
+  bots/
+    {BotName}/          → maps to /skillet/ inside that bot's container
+\`\`\`
+
+## Writing files that appear in the browser
+
+Anything you write inside your \`/skillet/\` directory is immediately
+browsable by the human at \`/files/bots/{YourName}/<path>\`.
+
+**Example — create a simple report page:**
+\`\`\`bash
+mkdir -p /skillet/reports
+cat > /skillet/reports/summary.html <<'EOF'
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Summary</title>
+<style>body{font-family:sans-serif;max-width:800px;margin:40px auto;padding:0 16px}</style>
+</head><body>
+<h1>Analysis Summary</h1>
+<p>Put your content here.</p>
+</body></html>
+EOF
+\`\`\`
+
+Then tell the human:
+\`\`\`
+I've written the report. You can view it at: /files/bots/{YourName}/reports/summary.html
+\`\`\`
+
+The PWA will render \`.html\` files in a sandboxed iframe by default,
+with a **Raw** button to inspect the source. All other file types are
+displayed as plain text.
+
+## Sharing output from /shared/work/
+
+Files committed to the shared Git repo appear under the \`shared/\` namespace.
+A file at \`/shared/work/docs/report.html\` is browsable at
+\`/files/shared/work/docs/report.html\`.
+
+## Size limit
+
+The read endpoint enforces a **1 MB** cap per file. Split larger payloads
+into multiple files or use pagination in your HTML.
+
+## Security notes
+
+- The browser renders HTML with \`sandbox="allow-scripts"\` — no external
+  network access, no top-level navigation, no cookies.
+- Never write credentials or secrets into \`/skillet/\` files meant to be
+  viewed — the entire \`bots/\` namespace is readable by any authenticated
+  human session.
 `
 
 const REGISTRY_MD = `# Bot Registry

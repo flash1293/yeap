@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { listVirtualFiles, readVirtualFile } from '../api/orchestrator.js'
 import type { FileEntry } from '../api/orchestrator.js'
 
@@ -14,12 +14,14 @@ function formatSize(bytes: number): string {
 
 export function Files() {
   const navigate = useNavigate()
+  const { '*': filePath } = useParams()
+  const selectedFile = filePath || null
   const [cache, setCache] = useState<TreeCache>(new Map())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState<string | null>(null)
   const [loadingContent, setLoadingContent] = useState(false)
+  const [htmlRawMode, setHtmlRawMode] = useState(false)
 
   const loadDir = useCallback(
     async (path: string) => {
@@ -52,6 +54,37 @@ export function Files() {
     setExpanded(new Set(['']))
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When a file is linked directly, expand all ancestor dirs and load its content
+  useEffect(() => {
+    if (!selectedFile) return
+    // Expand every ancestor segment
+    const parts = selectedFile.split('/')
+    const ancestors = parts.map((_, i) => parts.slice(0, i).join('/')).filter((_, i) => i <= parts.length - 1)
+    setExpanded((s) => {
+      const n = new Set(s)
+      for (const a of ancestors) n.add(a)
+      return n
+    })
+    // Ensure each ancestor dir is loaded
+    void (async () => {
+      for (const a of ancestors) {
+        await loadDir(a)
+      }
+    })()
+  }, [selectedFile]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load file content whenever selectedFile changes
+  useEffect(() => {
+    if (!selectedFile) { setFileContent(null); return }
+    setLoadingContent(true)
+    setFileContent(null)
+    setHtmlRawMode(false)
+    void readVirtualFile(selectedFile)
+      .then(setFileContent)
+      .catch(() => setFileContent('[Error loading file]'))
+      .finally(() => setLoadingContent(false))
+  }, [selectedFile])
+
   async function handleDirClick(path: string) {
     if (expanded.has(path)) {
       setExpanded((s) => {
@@ -65,18 +98,8 @@ export function Files() {
     }
   }
 
-  async function handleFileClick(path: string) {
-    setSelectedFile(path)
-    setLoadingContent(true)
-    setFileContent(null)
-    try {
-      const content = await readVirtualFile(path)
-      setFileContent(content)
-    } catch {
-      setFileContent('[Error loading file]')
-    } finally {
-      setLoadingContent(false)
-    }
+  function handleFileClick(path: string) {
+    void navigate(`/files/${path}`)
   }
 
   function renderEntries(parentPath: string, depth: number): React.ReactNode {
@@ -199,9 +222,9 @@ export function Files() {
         </div>
 
         {/* Content panel */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 16, minWidth: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           {!selectedFile && (
-            <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, padding: 16 }}>
               Select a file in the tree to view its contents.
             </p>
           )}
@@ -209,33 +232,77 @@ export function Files() {
             <>
               <div
                 style={{
-                  fontSize: 12,
-                  color: 'var(--text-muted)',
-                  marginBottom: 12,
-                  fontFamily: 'monospace',
-                  wordBreak: 'break-all',
+                  padding: '8px 16px',
+                  borderBottom: '1px solid var(--border)',
+                  background: 'var(--surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  flexShrink: 0,
                 }}
               >
-                {selectedFile}
-              </div>
-              {loadingContent && (
-                <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading…</p>
-              )}
-              {!loadingContent && fileContent !== null && (
-                <pre
+                <span
                   style={{
                     fontSize: 12,
+                    color: 'var(--text-muted)',
                     fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
                     wordBreak: 'break-all',
-                    color: 'var(--text)',
-                    margin: 0,
-                    lineHeight: 1.6,
+                    flex: 1,
                   }}
                 >
-                  {fileContent}
-                </pre>
-              )}
+                  {selectedFile}
+                </span>
+                {selectedFile.endsWith('.html') && fileContent !== null && (
+                  <button
+                    onClick={() => setHtmlRawMode((v) => !v)}
+                    style={{
+                      background: 'none',
+                      border: '1px solid var(--border)',
+                      borderRadius: 4,
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      padding: '2px 8px',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {htmlRawMode ? 'Rendered' : 'Raw'}
+                  </button>
+                )}
+              </div>
+              <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+                {loadingContent && (
+                  <p style={{ color: 'var(--text-muted)', fontSize: 13, padding: 16 }}>Loading…</p>
+                )}
+                {!loadingContent && fileContent !== null && selectedFile.endsWith('.html') && !htmlRawMode ? (
+                  <iframe
+                    srcDoc={fileContent}
+                    sandbox="allow-scripts"
+                    style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }}
+                    title={selectedFile}
+                  />
+                ) : (
+                  !loadingContent && fileContent !== null && (
+                    <pre
+                      style={{
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-all',
+                        color: 'var(--text)',
+                        margin: 0,
+                        lineHeight: 1.6,
+                        padding: 16,
+                        overflowY: 'auto',
+                        height: '100%',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {fileContent}
+                    </pre>
+                  )
+                )}
+              </div>
             </>
           )}
         </div>

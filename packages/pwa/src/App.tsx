@@ -68,7 +68,7 @@ export function App() {
           }
         />
         <Route
-          path="/files"
+          path="/files/*"
           element={
             !initialized ? (
               <Navigate to="/setup" />
