@@ -1,3 +1,4 @@
+import { fetchTopicPage as fetchTopicPageAPI } from '../api/reminder.js'
 import { listFiles, getFileContent } from '../api/reminder.js'
 import type { FsadMessage, MessageMeta } from '@yeap/shared'
 
@@ -11,30 +12,11 @@ function parseMessageDirName(dirName: string): { timestamp: string; author_name:
   return { timestamp: dirName.slice(0, idx), author_name: dirName.slice(idx + 1) }
 }
 
-export async function loadTopic(topic_id: string): Promise<FsadMessage[]> {
-  const topic_path = `${CHAT_ROOT}/${topic_id}`
-  const entries = await listFiles(topic_path)
-  const dirs = entries
-    .filter((e) => e.is_dir)
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  return Promise.all(dirs.map((d) => loadMessage(d.path, topic_id)))
-}
-
 export async function loadTopicPage(
   topic_id: string,
   limit: number,
 ): Promise<{ messages: FsadMessage[]; total: number }> {
-  const topic_path = `${CHAT_ROOT}/${topic_id}`
-  const entries = await listFiles(topic_path)
-  const dirs = entries
-    .filter((e) => e.is_dir)
-    .sort((a, b) => a.name.localeCompare(b.name))
-
-  const total = dirs.length
-  const slice = dirs.slice(Math.max(0, total - limit))
-  const messages = await Promise.all(slice.map((d) => loadMessage(d.path, topic_id)))
-  return { messages, total }
+  return fetchTopicPageAPI(topic_id, limit)
 }
 
 export async function loadTopics(): Promise<string[]> {
@@ -42,39 +24,3 @@ export async function loadTopics(): Promise<string[]> {
   return entries.filter((e) => e.is_dir).map((e) => e.name)
 }
 
-async function loadMessage(abs_path: string, topic_id: string): Promise<FsadMessage> {
-  const dir_name = abs_path.split('/').pop() ?? ''
-  const parsed = parseMessageDirName(dir_name)
-  const author_name = parsed?.author_name ?? 'Unknown'
-  const timestamp = parsed?.timestamp ?? ''
-
-  let content = ''
-  try {
-    content = await getFileContent(`${abs_path}/content.txt`)
-  } catch {
-    content = ''
-  }
-
-  let meta: MessageMeta | null = null
-  try {
-    const raw = await getFileContent(`${abs_path}/meta.json`)
-    meta = JSON.parse(raw) as MessageMeta
-  } catch {
-    // absent
-  }
-
-  const children = await listFiles(abs_path)
-  const reply_dirs = children.filter((c) => c.is_dir).sort((a, b) => a.name.localeCompare(b.name))
-  const replies = await Promise.all(reply_dirs.map((r) => loadMessage(r.path, topic_id)))
-
-  return {
-    topic_id,
-    author_name,
-    timestamp,
-    path: abs_path,
-    relative_path: abs_path.replace('/shared/', ''),
-    content,
-    meta,
-    replies,
-  }
-}

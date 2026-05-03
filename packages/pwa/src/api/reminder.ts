@@ -1,4 +1,4 @@
-import type { FsadEvent, FileNode, FileContentResponse, Reminder } from '@yeap/shared'
+import type { FsadEvent, FileNode, FileContentResponse, FsadMessage, Reminder } from '@yeap/shared'
 
 const BASE = import.meta.env['VITE_REMINDER_URL'] ?? '/api/rem'
 
@@ -27,6 +27,16 @@ export async function listFiles(path: string): Promise<FileNode[]> {
   if (!res.ok) return []
   return res.json() as Promise<FileNode[]>
 }
+
+export async function fetchTopicPage(
+  topic_id: string,
+  limit: number,
+): Promise<{ messages: FsadMessage[]; total: number }> {
+  const res = await fetch(`${BASE}/files/topic?topic_id=${encodeURIComponent(topic_id)}&limit=${limit}`)
+  if (!res.ok) return { messages: [], total: 0 }
+  return res.json() as Promise<{ messages: FsadMessage[]; total: number }>
+}
+
 
 export async function getFileContent(path: string): Promise<string> {
   const res = await fetch(`${BASE}/files/content?path=${encodeURIComponent(path)}`)
