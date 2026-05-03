@@ -79,6 +79,30 @@ export function MessageBubble({ message, bots, depth = 0, onReply }: Props) {
         </div>
       </div>
 
+      {message.replies.length > 0 && (
+        <div style={{ marginLeft: 42 }}>
+          <button
+            onClick={() => setThreadOpen((o) => !o)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: 12,
+              padding: '2px 0 6px',
+            }}
+          >
+            {threadOpen
+              ? `▾ Hide ${message.replies.length} ${message.replies.length === 1 ? 'reply' : 'replies'}`
+              : `▸ ${message.replies.length} ${message.replies.length === 1 ? 'reply' : 'replies'}`}
+          </button>
+        </div>
+      )}
+
+      {threadOpen && message.replies.map((reply) => (
+        <MessageBubble key={reply.path} message={reply} bots={bots} depth={depth + 1} {...(onReply !== undefined ? { onReply } : {})} />
+      ))}
+
       {onReply && (
         <div style={{ marginLeft: 42 }}>
           {!replying ? (
@@ -162,30 +186,6 @@ export function MessageBubble({ message, bots, depth = 0, onReply }: Props) {
           )}
         </div>
       )}
-
-      {message.replies.length > 0 && (
-        <div style={{ marginLeft: 42 }}>
-          <button
-            onClick={() => setThreadOpen((o) => !o)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: 12,
-              padding: '2px 0 6px',
-            }}
-          >
-            {threadOpen
-              ? `▾ Hide ${message.replies.length} ${message.replies.length === 1 ? 'reply' : 'replies'}`
-              : `▸ ${message.replies.length} ${message.replies.length === 1 ? 'reply' : 'replies'}`}
-          </button>
-        </div>
-      )}
-
-      {threadOpen && message.replies.map((reply) => (
-        <MessageBubble key={reply.path} message={reply} bots={bots} depth={depth + 1} {...(onReply !== undefined ? { onReply } : {})} />
-      ))}
     </div>
   )
 }
