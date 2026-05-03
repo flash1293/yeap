@@ -33,7 +33,7 @@ export function queryBots(opts?: {
   const allBots = db.select().from(bots).all()
 
   const filtered = allBots.filter((b) => {
-    if (opts?.exclude && b.name === opts.exclude) return false
+    if (opts?.exclude && b.name.toLowerCase() === opts.exclude.toLowerCase()) return false
     return true
   })
 

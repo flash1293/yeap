@@ -224,7 +224,7 @@ async function poll(): Promise<void> {
         dirty = true
 
         const parsed = parseMessageDirName(entry)
-        if (parsed && parsed.author_name !== BOT_NAME) {
+        if (parsed && parsed.author_name.toLowerCase() !== BOT_NAME.toLowerCase()) {
           const contentFile = join(msgDir, 'content.txt')
           const metaFile = join(msgDir, 'meta.json')
           if (existsSync(contentFile)) {
@@ -277,7 +277,7 @@ async function poll(): Promise<void> {
 
         const parsed = parseMessageDirName(replyEntry)
         if (!parsed) continue
-        if (parsed.author_name === BOT_NAME) continue
+        if (parsed.author_name.toLowerCase() === BOT_NAME.toLowerCase()) continue
 
         const contentFile = join(replyDir, 'content.txt')
         const metaFile = join(replyDir, 'meta.json')
