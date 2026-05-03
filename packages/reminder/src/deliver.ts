@@ -1,6 +1,24 @@
-import type { Bot, FsadEvent, MessageMeta } from '@yeap/shared'
+import type { Bot, FsadEvent } from '@yeap/shared'
 
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] ?? 'http://orchestrator:3000'
+
+/** Extract @Name mentions from message content. */
+function extractMentions(content: string): string[] {
+  const matches = content.match(/@([A-Za-z][A-Za-z0-9_-]*)/g)
+  if (!matches) return []
+  return [...new Set(matches.map((m) => m.slice(1).toLowerCase()))]
+}
+
+/** Fetch all bots from the registry (no topic filter) for mention resolution. */
+async function fetchAllBots(): Promise<Bot[]> {
+  try {
+    const res = await fetch(`${ORCHESTRATOR_URL}/registry/bots`)
+    if (!res.ok) return []
+    return (await res.json()) as Bot[]
+  } catch {
+    return []
+  }
+}
 
 export async function deliverToSubscribers(event: FsadEvent): Promise<void> {
   if (event.type === 'connected') return
@@ -18,6 +36,36 @@ export async function deliverToSubscribers(event: FsadEvent): Promise<void> {
   } catch (err) {
     console.error('[deliver] Failed to fetch subscribers:', err)
     return
+  }
+
+  // inbox-* topics: for top-level messages only the inbox owner receives it.
+  // Replies still reach all subscribers (so the original sender gets the reply).
+  const inboxMatch = event.topic_id.toLowerCase().match(/^inbox-(.+)$/)
+  if (inboxMatch && event.type === 'new_message') {
+    const ownerSlug = inboxMatch[1]
+    bots = bots.filter(
+      (b) => b.name.toLowerCase().replace(/[\s_]+/g, '-') === ownerSlug,
+    )
+  }
+
+  // @mentions: always deliver to the mentioned bot regardless of subscription.
+  const mentionSlugs = extractMentions(event.content)
+  if (mentionSlugs.length > 0) {
+    const allBots = await fetchAllBots()
+    for (const slug of mentionSlugs) {
+      const mentioned = allBots.find(
+        (b) =>
+          b.name.toLowerCase().replace(/[\s_]+/g, '-') === slug ||
+          b.name.toLowerCase() === slug,
+      )
+      if (
+        mentioned &&
+        mentioned.name.toLowerCase() !== event.author_name.toLowerCase() &&
+        !bots.find((b) => b.name === mentioned.name)
+      ) {
+        bots.push(mentioned)
+      }
+    }
   }
 
   await Promise.allSettled(bots.map((bot) => deliverToBot(bot, event)))

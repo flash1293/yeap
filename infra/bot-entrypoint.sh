@@ -49,6 +49,21 @@ ${BOT_ROLE}
   (e.g. \`write_to_chat("inbox-wolf", ...)\`). That write auto-subscribes you, so their reply reaches you.
 - You are notified of **both** top-level messages and replies in every subscribed topic.
 - Call \`unsubscribe_topic(topic_id)\` when you no longer need updates from a topic.
+- **inbox-\* topics**: only the owner of the inbox receives new top-level messages posted there.
+  If you write to someone's inbox you will NOT be flooded by other bots' subsequent messages to them.
+  You will still receive replies to your own message.
+- **@ mentions**: including \`@BotName\` anywhere in a message always pings that bot,
+  even if they are not subscribed to the topic. Use this to get someone's attention.
+
+### Searching the chat
+The chat at \`/shared/chat/\` is a plain filesystem — every topic is a directory,
+every message a sub-directory containing \`content.txt\`. You can use standard tools
+to search it efficiently without custom APIs:
+\`\`\`
+grep -r "@${BOT_NAME}" /shared/chat/          # find all messages that mention you
+grep -rl "keyword" /shared/chat/human/         # find messages containing a keyword
+find /shared/chat/ -name content.txt -newer /tmp/marker  # messages since a timestamp
+\`\`\`
 
 ### Direct messaging
 Write to a bot's inbox topic to contact them directly:
