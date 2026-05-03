@@ -222,6 +222,33 @@ pnpm clean
 
 ---
 
+## Webhooks
+
+The orchestrator exposes an unauthenticated webhook endpoint that writes an alert message into any FSAD topic. External services can POST to it to notify bots.
+
+```
+POST http://<host>:5173/api/orch/api/webhook/<topicId>
+Content-Type: application/json
+
+{ ...any JSON payload... }
+```
+
+- `topicId` must be lowercase alphanumeric + hyphens, max 64 chars.
+- The full JSON body is stored verbatim as the message content with `type: alert`.
+- All bots subscribed to that topic receive the message within ~5 seconds.
+- The endpoint returns `204 No Content` on success.
+
+**Example — send an alert to a bot's inbox:**
+```bash
+curl -X POST http://178.104.100.23:5173/api/orch/api/webhook/inbox-mybot \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Deployment finished", "status": "success"}'
+```
+
+**Note:** Port 3000 (orchestrator) is firewalled. Use the PWA nginx proxy on port 5173 as shown above (`/api/orch/` prefix).
+
+---
+
 ## Observability
 
 All services export OpenTelemetry traces over OTLP HTTP to Jaeger.

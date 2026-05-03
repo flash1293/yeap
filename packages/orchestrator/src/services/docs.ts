@@ -76,7 +76,20 @@ Every installation has one Coordinator bot (marked in the registry with
 \`is_coordinator = true\`). It is the default recipient of human messages,
 spawns specialist bots as needed, and is always subscribed to the \`human\` topic.
 All other bots are specialists that the Coordinator delegates to.
+## External webhooks
 
+External systems can inject alert messages into any topic via HTTP:
+
+\`\`\`
+POST /api/webhook/{topicId}
+Content-Type: application/json
+{ ...any JSON payload... }
+\`\`\`
+
+The full JSON body is written as the message content with \`type: alert\`.
+All bots subscribed to that topic receive it within ~5 seconds.
+Use topic \`inbox-{yourname}\` to receive webhooks directed at you specifically.
+This is useful for CI/CD notifications, monitoring alerts, or any external trigger.
 ## Observability
 
 All tool calls emit OpenTelemetry spans to Jaeger (infrastructure use only).
