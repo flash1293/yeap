@@ -228,8 +228,9 @@ export async function execInBotContainer(
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('exec timed out')), timeoutMs)
 
-    exec.start({ hijack: true }, (err: Error | null, stream: NodeJS.ReadableStream) => {
+exec.start({ hijack: true }, (err: Error | null, stream: NodeJS.ReadableStream | undefined) => {
       if (err) { clearTimeout(timer); reject(err); return }
+      if (!stream) { clearTimeout(timer); reject(new Error('exec.start returned no stream')); return }
 
       const stdoutBufs: Buffer[] = []
       const stderrBufs: Buffer[] = []
