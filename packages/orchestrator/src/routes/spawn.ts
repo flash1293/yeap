@@ -150,14 +150,10 @@ spawnRouter.post('/compact/:name', async (c) => {
     return c.json({ error: 'Bot is not online or has no session' }, 409)
   }
 
-  const endpoint = `${bot.opencode_url}/session/${bot.session_id}/message`
+  const endpoint = `${bot.opencode_url}/session/${bot.session_id}/compact`
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parts: [{ type: 'text', text: '/compact' }] }),
-    })
-    if (!res.ok && res.status !== 204) {
+    const res = await fetch(endpoint, { method: 'POST' })
+    if (!res.ok) {
       const txt = await res.text()
       console.error(`[compact] OpenCode returned ${res.status}: ${txt}`)
       return c.json({ error: `OpenCode responded ${res.status}` }, 502)
@@ -192,13 +188,9 @@ spawnRouter.post('/compact-check/:name', async (c) => {
 
   if (newCount >= AUTO_COMPACT_THRESHOLD && bot.opencode_url && bot.session_id) {
     console.log(`[compact-check] Auto-compacting ${name} at ${newCount} messages`)
-    const endpoint = `${bot.opencode_url}/session/${bot.session_id}/message`
+    const endpoint = `${bot.opencode_url}/session/${bot.session_id}/compact`
     try {
-      await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parts: [{ type: 'text', text: '/compact' }] }),
-      })
+      await fetch(endpoint, { method: 'POST' })
       db.update(bots)
         .set({ messages_since_compact: 0, last_compact_at: Date.now() })
         .where(eq(bots.name, name))
