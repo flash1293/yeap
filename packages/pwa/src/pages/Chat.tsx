@@ -20,7 +20,7 @@ export function Chat() {
   const [bots, setBots] = useState<Bot[]>([])
   const [messages, setMessages] = useState<FsadMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
-  const [visibleCount, setVisibleCount] = useState(20)
+  const [visibleCount, setVisibleCount] = useState(10)
   const [totalMessages, setTotalMessages] = useState(0)
   const [loadingMore, setLoadingMore] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640)
@@ -54,8 +54,8 @@ export function Chat() {
   // Load messages for current topic
   useEffect(() => {
     setLoadingMessages(true)
-    setVisibleCount(20)
-    void loadTopicPage(topicId, 20)
+    setVisibleCount(10)
+    void loadTopicPage(topicId, 10)
       .then(({ messages, total }) => {
         setMessages(messages)
         setTotalMessages(total)
@@ -68,9 +68,16 @@ export function Chat() {
     const unsub = subscribeEvents((event) => {
       if (event.type === 'connected') return
       if (event.topic_id === topicId) {
-        void loadTopicPage(topicId, visibleCount).then(({ messages, total }) => {
-          setMessages(messages)
+        // Only reload the latest 20 messages; merge with older cached messages
+        // so we don't re-fetch everything when the user has loaded many pages.
+        const SSE_RELOAD = 20
+        void loadTopicPage(topicId, SSE_RELOAD).then(({ messages: fresh, total }) => {
           setTotalMessages(total)
+          setMessages(prev =>
+            prev.length > SSE_RELOAD
+              ? [...prev.slice(0, prev.length - SSE_RELOAD), ...fresh]
+              : fresh
+          )
         })
       } else {
         // Track unread count for topics we're not currently viewing

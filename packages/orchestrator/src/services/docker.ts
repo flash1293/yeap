@@ -126,6 +126,7 @@ export async function createAndStartBotContainer(
     ],
     HostConfig: {
       NetworkMode: DOCKER_NETWORK,
+      Memory: 600 * 1024 * 1024,
       Mounts: [
         { Type: 'volume', Source: skilletVolume, Target: '/skillet' },
         { Type: 'volume', Source: 'yeap-shared', Target: '/shared' },
@@ -183,6 +184,7 @@ export async function createAndStartCoordinatorContainer(
         { Type: 'volume', Source: opencodeVolume, Target: '/root/.local/share/opencode' },
       ],
       RestartPolicy: { Name: 'unless-stopped' },
+      Memory: 600 * 1024 * 1024,
     },
   }) as unknown as Docker.Container
 
