@@ -61,6 +61,21 @@ async function getSubscriptions(): Promise<string[]> {
   }
 }
 
+/** Return names of other bots also subscribed to a topic (excludes self). */
+async function getTopicCosubscribers(topic_id: string): Promise<string[]> {
+  try {
+    const url = new URL(`${ORCHESTRATOR_URL}/registry/bots`)
+    url.searchParams.set('topic', topic_id)
+    url.searchParams.set('exclude', BOT_NAME)
+    const res = await fetch(url)
+    if (!res.ok) return []
+    const bots = (await res.json()) as Array<{ name: string }>
+    return bots.map((b) => b.name)
+  } catch {
+    return []
+  }
+}
+
 // ─── Message delivery ─────────────────────────────────────────────────────────
 
 async function deliverToSession(session_id: string, prompt: string): Promise<void> {
@@ -86,13 +101,18 @@ function buildPrompt(
   author: string,
   content: string,
   msgType: string,
+  otherNotified: string[],
 ): string {
+  const topicDir = `${CHAT_ROOT}/${topic_id}`
   return [
     `[YEAP INCOMING MESSAGE]`,
     `Topic: ${topic_id}`,
     `From: ${author}`,
     `Type: ${msgType}`,
     `Message path: ${msgDir}`,
+    `Also notified: ${
+      otherNotified.length > 0 ? otherNotified.join(', ') : '(only you)'
+    }`,
     ``,
     content,
     ``,
@@ -101,6 +121,11 @@ function buildPrompt(
     `Use reply_to_message(parent_path="${msgDir}", content="...") to reply,`,
     `or write_to_chat(topic_id="...", content="...") to start a new thread.`,
     `If the message is from a human in your inbox, you MUST reply to it.`,
+    ``,
+    `Filesystem context (read surrounding messages without extra API calls):`,
+    `  This message       : cat ${msgDir}/content.txt`,
+    `  All messages (sorted): ls ${topicDir}/ | sort`,
+    `  Replies to this    : ls ${msgDir}/`,
   ].join('\n')
 }
 
@@ -111,7 +136,9 @@ function buildReplyPrompt(
   author: string,
   content: string,
   msgType: string,
+  otherNotified: string[],
 ): string {
+  const topicDir = `${CHAT_ROOT}/${topic_id}`
   return [
     `[YEAP INCOMING REPLY]`,
     `Topic: ${topic_id}`,
@@ -119,6 +146,9 @@ function buildReplyPrompt(
     `Type: ${msgType}`,
     `Reply path: ${replyDir}`,
     `In reply to: ${parentDir}`,
+    `Also notified: ${
+      otherNotified.length > 0 ? otherNotified.join(', ') : '(only you)'
+    }`,
     ``,
     content,
     ``,
@@ -126,6 +156,12 @@ function buildReplyPrompt(
     `You have received the above reply to a message you posted. Please respond appropriately.`,
     `Use reply_to_message(parent_path="${replyDir}", content="...") to continue this thread,`,
     `or reply_to_message(parent_path="${parentDir}", content="...") to reply at the original level.`,
+    ``,
+    `Filesystem context (read surrounding messages without extra API calls):`,
+    `  This reply         : cat ${replyDir}/content.txt`,
+    `  Parent message     : cat ${parentDir}/content.txt`,
+    `  All replies        : ls ${parentDir}/`,
+    `  All messages (sorted): ls ${topicDir}/ | sort`,
   ].join('\n')
 }
 
@@ -140,6 +176,14 @@ async function poll(): Promise<void> {
 
   const subscriptions = await getSubscriptions()
   if (!subscriptions.length) return
+
+  // Fetch co-subscribers for each topic once (not per message)
+  const cosubsCache = new Map<string, string[]>()
+  await Promise.all(
+    subscriptions.map(async (topic_id) => {
+      cosubsCache.set(topic_id, await getTopicCosubscribers(topic_id))
+    }),
+  )
 
   const seen = loadSeen()
   let dirty = false
@@ -196,7 +240,7 @@ async function poll(): Promise<void> {
               pending.push({
                 topic_id,
                 msgDir,
-                prompt: buildPrompt(topic_id, msgDir, parsed.author_name, content, msgType),
+                prompt: buildPrompt(topic_id, msgDir, parsed.author_name, content, msgType, cosubsCache.get(topic_id) ?? []),
               })
             }
           }
@@ -253,7 +297,7 @@ async function poll(): Promise<void> {
         pending.push({
           topic_id,
           msgDir: replyDir,
-          prompt: buildReplyPrompt(topic_id, replyDir, msgDir, parsed.author_name, content, msgType),
+          prompt: buildReplyPrompt(topic_id, replyDir, msgDir, parsed.author_name, content, msgType, cosubsCache.get(topic_id) ?? []),
         })
       }
     }

@@ -69,7 +69,7 @@ export async function deliverToSubscribers(event: FsadEvent): Promise<void> {
     }
   }
 
-  await Promise.allSettled(bots.map((bot) => deliverToBot(bot, event)))
+  await Promise.allSettled(bots.map((bot) => deliverToBot(bot, event, bots)))
 }
 
 async function incrementDeliveryCount(botName: string): Promise<void> {
@@ -86,14 +86,15 @@ async function incrementDeliveryCount(botName: string): Promise<void> {
   }
 }
 
-async function deliverToBot(bot: Bot, event: FsadEvent): Promise<void> {
+async function deliverToBot(bot: Bot, event: FsadEvent, allNotified: Bot[]): Promise<void> {
   if (event.type === 'connected') return
   if (!bot.opencode_url || !bot.session_id) {
     console.warn(`[deliver] Bot ${bot.name} has no opencode_url/session_id — skipping`)
     return
   }
 
-  const text = formatMessageForBot(event)
+  const otherNotified = allNotified.filter((b) => b.name !== bot.name).map((b) => b.name)
+  const text = formatMessageForBot(event, otherNotified)
   const endpoint = `${bot.opencode_url}/session/${bot.session_id}/message`
 
   try {
@@ -115,17 +116,38 @@ async function deliverToBot(bot: Bot, event: FsadEvent): Promise<void> {
   }
 }
 
-function formatMessageForBot(event: Extract<FsadEvent, { type: 'new_message' | 'new_reply' }>): string {
+function formatMessageForBot(
+  event: Extract<FsadEvent, { type: 'new_message' | 'new_reply' }>,
+  otherNotified: string[],
+): string {
+  const msgPath = event.message_path
+  const topicDir = `/shared/chat/${event.topic_id}`
+
   const lines: string[] = [
     `[YEAP MESSAGE]`,
     `Topic: ${event.topic_id}`,
     `From: ${event.author_name}`,
     `Time: ${event.timestamp}`,
-    `Path: ${event.message_path}`,
+    `Path: ${msgPath}`,
   ]
   if (event.type === 'new_reply' && event.parent_path) {
     lines.push(`Reply to: ${event.parent_path}`)
   }
-  lines.push('', event.content)
+  lines.push(
+    `Also notified: ${
+      otherNotified.length > 0 ? otherNotified.join(', ') : '(only you)'
+    }`,
+  )
+  lines.push('', event.content, '')
+  lines.push('---')
+  lines.push('Filesystem context (read surrounding messages without extra API calls):')
+  lines.push(`  This message : cat ${msgPath}/content.txt`)
+  lines.push(`  All messages in topic (sorted) : ls ${topicDir}/ | sort`)
+  if (event.type === 'new_reply' && event.parent_path) {
+    lines.push(`  Sibling replies : ls ${event.parent_path}/`)
+    lines.push(`  Parent message  : cat ${event.parent_path}/content.txt`)
+  } else {
+    lines.push(`  Replies to this : ls ${msgPath}/`)
+  }
   return lines.join('\n')
 }
