@@ -20,6 +20,8 @@ export function buildBot(
     session_id: row.session_id ?? null,
     is_coordinator: row.is_coordinator,
     subscriptions: subs,
+    messages_since_compact: row.messages_since_compact ?? 0,
+    last_compact_at: row.last_compact_at ?? null,
   }
 }
 

@@ -4,7 +4,7 @@ import { bots, subscriptions, spawn_log } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { generateBotIcon } from '@yeap/shared'
-import { createAndStartBotContainer, allocateHostPort, stopAndRemoveBotContainer, deleteNginxBotConfig, reloadNginxBots } from '../services/docker.js'
+import { createAndStartBotContainer, createAndStartCoordinatorContainer, allocateHostPort, stopAndRemoveBotContainer, deleteNginxBotConfig, reloadNginxBots } from '../services/docker.js'
 import { getBotByName } from '../db/helpers.js'
 import type { SpawnPayload } from '@yeap/shared'
 
@@ -103,4 +103,110 @@ spawnRouter.delete('/:name', async (c) => {
   db.delete(bots).where(eq(bots.id, bot.id)).run()
 
   return c.json({ ok: true, name })
+})
+
+// POST /spawn/reset/:name — recreate the container (keep volumes/memory, clear session leak cruft)
+spawnRouter.post('/reset/:name', async (c) => {
+  const name = c.req.param('name')
+  const bot = db.select().from(bots).where(eq(bots.name, name)).get()
+  if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
+
+  // Stop and remove the old container (volumes are named and survive)
+  try {
+    await stopAndRemoveBotContainer(name)
+  } catch (err) {
+    console.error('[reset] Failed to stop container:', err)
+    return c.json({ error: 'Failed to stop container' }, 500)
+  }
+
+  // Recreate with the same role and port
+  const hostPort = bot.host_port ?? allocateHostPort()
+  let container_id: string
+  try {
+    if (bot.is_coordinator) {
+      container_id = await createAndStartCoordinatorContainer(name, hostPort)
+    } else {
+      container_id = await createAndStartBotContainer(name, bot.role_description, hostPort)
+    }
+  } catch (err) {
+    console.error('[reset] Failed to recreate container:', err)
+    return c.json({ error: 'Failed to recreate container' }, 500)
+  }
+
+  db.update(bots)
+    .set({ status: 'offline', host_port: hostPort, session_id: null, last_seen: null })
+    .where(eq(bots.name, name))
+    .run()
+
+  return c.json({ ok: true, container_id })
+})
+
+// POST /spawn/compact/:name — send /compact to the bot's standing session
+spawnRouter.post('/compact/:name', async (c) => {
+  const name = c.req.param('name')
+  const bot = db.select().from(bots).where(eq(bots.name, name)).get()
+  if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
+  if (!bot.opencode_url || !bot.session_id) {
+    return c.json({ error: 'Bot is not online or has no session' }, 409)
+  }
+
+  const endpoint = `${bot.opencode_url}/session/${bot.session_id}/message`
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parts: [{ type: 'text', text: '/compact' }] }),
+    })
+    if (!res.ok && res.status !== 204) {
+      const txt = await res.text()
+      console.error(`[compact] OpenCode returned ${res.status}: ${txt}`)
+      return c.json({ error: `OpenCode responded ${res.status}` }, 502)
+    }
+  } catch (err) {
+    console.error('[compact] Fetch failed:', err)
+    return c.json({ error: 'Failed to reach bot' }, 502)
+  }
+
+  db.update(bots)
+    .set({ messages_since_compact: 0, last_compact_at: Date.now() })
+    .where(eq(bots.name, name))
+    .run()
+
+  return c.json({ ok: true })
+})
+
+// POST /spawn/compact-check/:name — called by reminder after each delivery
+// Increments the counter and triggers /compact when threshold is reached
+const AUTO_COMPACT_THRESHOLD = 50
+
+spawnRouter.post('/compact-check/:name', async (c) => {
+  const name = c.req.param('name')
+  const bot = db.select().from(bots).where(eq(bots.name, name)).get()
+  if (!bot) return c.json({ ok: true }) // silently ignore unknown bots
+
+  const newCount = (bot.messages_since_compact ?? 0) + 1
+  db.update(bots)
+    .set({ messages_since_compact: newCount })
+    .where(eq(bots.name, name))
+    .run()
+
+  if (newCount >= AUTO_COMPACT_THRESHOLD && bot.opencode_url && bot.session_id) {
+    console.log(`[compact-check] Auto-compacting ${name} at ${newCount} messages`)
+    const endpoint = `${bot.opencode_url}/session/${bot.session_id}/message`
+    try {
+      await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parts: [{ type: 'text', text: '/compact' }] }),
+      })
+      db.update(bots)
+        .set({ messages_since_compact: 0, last_compact_at: Date.now() })
+        .where(eq(bots.name, name))
+        .run()
+    } catch (err) {
+      console.error(`[compact-check] Failed to auto-compact ${name}:`, err)
+    }
+  }
+
+  return c.json({ ok: true })
 })

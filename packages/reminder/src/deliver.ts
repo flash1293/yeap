@@ -1,6 +1,7 @@
 import type { Bot, FsadEvent } from '@yeap/shared'
 
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] ?? 'http://orchestrator:3000'
+const AUTO_COMPACT_THRESHOLD = 50
 
 /** Extract @Name mentions from message content. */
 function extractMentions(content: string): string[] {
@@ -71,6 +72,20 @@ export async function deliverToSubscribers(event: FsadEvent): Promise<void> {
   await Promise.allSettled(bots.map((bot) => deliverToBot(bot, event)))
 }
 
+async function incrementDeliveryCount(botName: string): Promise<void> {
+  try {
+    const res = await fetch(
+      `${ORCHESTRATOR_URL}/spawn/compact-check/${encodeURIComponent(botName)}`,
+      { method: 'POST' },
+    )
+    if (!res.ok) {
+      console.warn(`[deliver] compact-check for ${botName} returned ${res.status}`)
+    }
+  } catch (err) {
+    console.warn(`[deliver] compact-check fetch failed for ${botName}:`, err)
+  }
+}
+
 async function deliverToBot(bot: Bot, event: FsadEvent): Promise<void> {
   if (event.type === 'connected') return
   if (!bot.opencode_url || !bot.session_id) {
@@ -91,6 +106,9 @@ async function deliverToBot(bot: Bot, event: FsadEvent): Promise<void> {
     })
     if (!res.ok) {
       console.error(`[deliver] OpenCode returned ${res.status} for bot ${bot.name}`)
+    } else {
+      // Increment the delivery counter; orchestrator will auto-compact when threshold hit
+      void incrementDeliveryCount(bot.name)
     }
   } catch (err) {
     console.error(`[deliver] Failed to deliver to ${bot.name}:`, err)

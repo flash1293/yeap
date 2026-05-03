@@ -11,6 +11,8 @@ export const bots = sqliteTable('bots', {
   host_port: integer('host_port'),
   session_id: text('session_id'),
   is_coordinator: integer('is_coordinator', { mode: 'boolean' }).notNull().default(false),
+  messages_since_compact: integer('messages_since_compact').notNull().default(0),
+  last_compact_at: integer('last_compact_at'),
 })
 
 export const subscriptions = sqliteTable(

@@ -48,3 +48,5 @@ sqlite.exec(`
 
 // Incremental migrations
 try { sqlite.exec(`ALTER TABLE bots ADD COLUMN host_port INTEGER`) } catch { /* already exists */ }
+try { sqlite.exec(`ALTER TABLE bots ADD COLUMN messages_since_compact INTEGER NOT NULL DEFAULT 0`) } catch { /* already exists */ }
+try { sqlite.exec(`ALTER TABLE bots ADD COLUMN last_compact_at INTEGER`) } catch { /* already exists */ }

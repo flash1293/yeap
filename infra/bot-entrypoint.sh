@@ -106,6 +106,20 @@ Convention for shared knowledge (not code):
 
 Do **not** write private scratchpad notes here — those belong in \`/skillet/\`.
 
+## Context compaction
+Your conversation context has a finite size. The platform auto-compacts it every 50 messages,
+but you can and should request compaction yourself at natural break points:
+- You have finished a block of work and updated \`/skillet/memory.md\`
+- You are about to wait for input and the context is large
+- You are asked to start a significantly different type of task
+
+**Before requesting compaction:**
+1. Write all important state to \`/skillet/memory.md\` (decisions, task status, key facts).
+2. Commit any work-in-progress to \`/shared/work/\` via \`git_commit_work\`.
+3. Call \`request_compaction()\` — the platform will send \`/compact\` to your session.
+
+You will wake up with a fresh context and your memory intact.
+
 ## Platform Docs
 Full documentation is available at \`/shared/yeap-docs/platform.md\`.
 EOF
@@ -115,20 +129,48 @@ export OPENCODE_RULES_FILE="$AGENTS_FILE"
 
 # Background bootstrap: send one message once the server is ready so the plugin
 # loads immediately (OpenCode lazy-loads plugins on first message, not on start).
+# On restart we reuse the stored standing session instead of creating a new one —
+# creating a new session on every restart leaks sessions and causes extra costly
+# init runs.  Only on true first boot (no session.json) do we create a throwaway
+# __yeap_init__ session to kick the plugin.
 (
   for i in $(seq 1 60); do
     curl -sf http://localhost:4096/session >/dev/null 2>&1 && break
     sleep 1
   done
-  SESSION_RESP=$(curl -sf -X POST http://localhost:4096/session \
-    -H 'Content-Type: application/json' \
-    -d '{"title":"__yeap_init__"}' 2>/dev/null)
-  SESSION_ID=$(printf '%s' "$SESSION_RESP" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-  if [ -n "$SESSION_ID" ]; then
-    curl -sf -X POST "http://localhost:4096/session/${SESSION_ID}/message" \
+
+  STORED_SESSION_ID=$(grep -o '"session_id":"[^"]*"' /skillet/session.json 2>/dev/null | head -1 | cut -d'"' -f4)
+
+  if [ -n "$STORED_SESSION_ID" ]; then
+    # Restart path: kick the existing standing session with the wakeup prompt.
+    # This is both the plugin load trigger and the bot's wakeup instruction.
+    PAYLOAD=$(python3 -c "
+import json, sys
+text = '''[YEAP RESTART]
+You have just come back online after a restart.
+Please do the following:
+1. Check /skillet/memory.md (if it exists) to restore prior context.
+2. Scan your inbox and any subscribed topics for messages that arrived while you were offline.
+3. Resume any outstanding tasks.
+Do not re-introduce yourself unless directly asked.'''
+print(json.dumps({'parts': [{'type': 'text', 'text': text}]}))")
+    curl -sf -X POST "http://localhost:4096/session/${STORED_SESSION_ID}/message" \
       -H 'Content-Type: application/json' \
-      -d '{"parts":[{"type":"text","text":"__yeap_init__"}]}' >/dev/null 2>&1 || true
-    echo "[yeap-entrypoint] Bootstrap kick sent — plugin will initialise shortly"
+      -d "$PAYLOAD" >/dev/null 2>&1 || true
+    echo "[yeap-entrypoint] Wakeup kick sent to standing session ${STORED_SESSION_ID}"
+  else
+    # First boot: no standing session yet — create a throwaway session to kick
+    # the plugin, which will then create and persist the real standing session.
+    SESSION_RESP=$(curl -sf -X POST http://localhost:4096/session \
+      -H 'Content-Type: application/json' \
+      -d '{"title":"__yeap_init__"}' 2>/dev/null)
+    SESSION_ID=$(printf '%s' "$SESSION_RESP" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+    if [ -n "$SESSION_ID" ]; then
+      curl -sf -X POST "http://localhost:4096/session/${SESSION_ID}/message" \
+        -H 'Content-Type: application/json' \
+        -d '{"parts":[{"type":"text","text":"__yeap_init__"}]}' >/dev/null 2>&1 || true
+      echo "[yeap-entrypoint] First-boot bootstrap kick sent — plugin will initialise shortly"
+    fi
   fi
 ) &
 

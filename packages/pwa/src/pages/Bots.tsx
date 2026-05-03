@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { getBots, subscribeBot, unsubscribeBot } from '../api/orchestrator.js'
+import { getBots, subscribeBot, unsubscribeBot, resetBot, compactBot } from '../api/orchestrator.js'
 import { getReminders, deleteReminder } from '../api/reminder.js'
 import { BotAvatar } from '../components/BotAvatar.js'
 import { botStatusColor, botStatusLabel } from '../lib/botStatus.js'
@@ -18,6 +18,8 @@ export function Bots() {
   const [addError, setAddError] = useState<Record<string, string>>({})
   const [reminders, setReminders] = useState<Record<string, Reminder[]>>({})
   const [expandedReminders, setExpandedReminders] = useState<Record<string, boolean>>({})
+  const [resetting, setResetting] = useState<Record<string, boolean>>({})
+  const [compacting, setCompacting] = useState<Record<string, boolean>>({})
 
   async function load() {
     const data = await getBots().catch(() => [] as Bot[])
@@ -57,6 +59,31 @@ export function Bots() {
   async function handleUnsubscribe(botName: string, topic: string) {
     await unsubscribeBot(botName, topic).catch(() => undefined)
     void load()
+  }
+
+  async function handleReset(botName: string) {
+    if (!confirm(`Reset ${botName}? This will recreate the container. Memory and files are preserved.`)) return
+    setResetting((p) => ({ ...p, [botName]: true }))
+    try {
+      await resetBot(botName)
+      void load()
+    } catch {
+      // ignore
+    } finally {
+      setResetting((p) => ({ ...p, [botName]: false }))
+    }
+  }
+
+  async function handleCompact(botName: string) {
+    setCompacting((p) => ({ ...p, [botName]: true }))
+    try {
+      await compactBot(botName)
+      void load()
+    } catch {
+      // ignore
+    } finally {
+      setCompacting((p) => ({ ...p, [botName]: false }))
+    }
   }
 
   async function handleSubscribe(bot: Bot) {
@@ -179,7 +206,7 @@ export function Bots() {
                 </button>
                 {bot.status === 'online' && bot.host_port && (
                   <a
-                    href={`http://localhost:${bot.host_port}/`}
+                    href={`http://${window.location.hostname}:${bot.host_port}/`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
@@ -198,6 +225,42 @@ export function Bots() {
                     Inspect ↗
                   </a>
                 )}
+                <button
+                  onClick={() => void handleCompact(bot.name)}
+                  disabled={compacting[bot.name] || bot.status !== 'online'}
+                  title={`Compact context (${bot.messages_since_compact} msgs since last compact)`}
+                  style={{
+                    padding: '6px 10px',
+                    background: 'var(--bg)',
+                    color: bot.messages_since_compact >= 40 ? '#f59e0b' : 'var(--text-muted)',
+                    border: `1px solid ${bot.messages_since_compact >= 40 ? '#f59e0b' : 'var(--border)'}`,
+                    borderRadius: 6,
+                    cursor: bot.status !== 'online' ? 'default' : 'pointer',
+                    fontSize: 12,
+                    flexShrink: 0,
+                    opacity: compacting[bot.name] ? 0.6 : 1,
+                  }}
+                >
+                  {compacting[bot.name] ? '…' : `⌛ ${bot.messages_since_compact}`}
+                </button>
+                <button
+                  onClick={() => void handleReset(bot.name)}
+                  disabled={resetting[bot.name]}
+                  title="Recreate container (keeps memory/files)"
+                  style={{
+                    padding: '6px 10px',
+                    background: 'var(--bg)',
+                    color: '#f87171',
+                    border: '1px solid #f8717144',
+                    borderRadius: 6,
+                    cursor: resetting[bot.name] ? 'default' : 'pointer',
+                    fontSize: 12,
+                    flexShrink: 0,
+                    opacity: resetting[bot.name] ? 0.6 : 1,
+                  }}
+                >
+                  {resetting[bot.name] ? '…' : '↺ Reset'}
+                </button>
               </div>
 
               {/* Subscriptions */}

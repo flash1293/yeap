@@ -93,18 +93,22 @@ async function deliverInitialPrompt(session_id: string): Promise<void> {
 async function getOrCreateSession(
   client: import('@opencode-ai/plugin').PluginInput['client'],
 ): Promise<{ session_id: string; is_new: boolean }> {
-  // Try restoring from disk
+  // Trust the stored session unconditionally. OpenCode sessions persist on the
+  // yeap-opencode-<slug> volume, so the session will still be there after a
+  // container restart. Verifying via client.session.get() is dangerous: the
+  // call can fail during the startup window (before OpenCode finishes loading),
+  // causing the code to fall through and create a SECOND session — leaking the
+  // old one. One session per bot, always.
   if (existsSync(SESSION_FILE)) {
     try {
       const { session_id } = JSON.parse(readFileSync(SESSION_FILE, 'utf8')) as SessionStore
-      const res = await client.session.get({ path: { id: session_id } })
-      if (res.data) return { session_id, is_new: false }
+      if (session_id) return { session_id, is_new: false }
     } catch {
-      // Fall through to create new
+      // Corrupt file — fall through to create new
     }
   }
 
-  // Create new session
+  // No session file — true first boot: create the standing session.
   const res = await client.session.create({ body: { title: `${BOT_NAME} standing session` } })
   const session_id = res.data!.id
   writeFileSync(SESSION_FILE, JSON.stringify({ session_id }), 'utf8')

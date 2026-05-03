@@ -83,3 +83,11 @@ export async function readVirtualFile(path: string): Promise<string> {
   const data = await req<{ content: string }>(`/pwa/files/read?path=${encodeURIComponent(path)}`)
   return data.content ?? ''
 }
+
+export async function resetBot(name: string): Promise<void> {
+  await req<{ ok: boolean }>(`/spawn/reset/${encodeURIComponent(name)}`, { method: 'POST' })
+}
+
+export async function compactBot(name: string): Promise<void> {
+  await req<{ ok: boolean }>(`/spawn/compact/${encodeURIComponent(name)}`, { method: 'POST' })
+}

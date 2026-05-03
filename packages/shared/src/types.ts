@@ -14,6 +14,8 @@ export type Bot = {
   session_id: string | null
   is_coordinator: boolean
   subscriptions: string[]
+  messages_since_compact: number
+  last_compact_at: number | null
 }
 
 export type Subscription = {
