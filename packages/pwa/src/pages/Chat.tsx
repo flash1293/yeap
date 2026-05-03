@@ -9,6 +9,7 @@ import { MessageInput } from '../components/MessageInput.js'
 import { useAuthStore } from '../store/auth.js'
 import { useUnreadStore } from '../store/unread.js'
 import { useNotificationsStore } from '../store/notifications.js'
+import { useStarsStore } from '../store/stars.js'
 import type { Bot, FsadMessage } from '@yeap/shared'
 
 export function Chat() {
@@ -32,6 +33,7 @@ export function Chat() {
   const clearUnread = useUnreadStore((s) => s.clear)
   const isMuted = useNotificationsStore((s) => s.isMuted)
   const toggleMute = useNotificationsStore((s) => s.toggle)
+  const starred = useStarsStore((s) => s.starred)
 
   // Request browser notification permission once
   useEffect(() => {
@@ -250,6 +252,40 @@ export function Chat() {
         >
           Files
         </button>
+        {starred.length > 0 && (
+          <div style={{ borderBottom: '1px solid var(--border)' }}>
+            <div style={{ padding: '6px 16px 2px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              ★ Starred
+            </div>
+            {starred.map((path) => {
+              const name = path.split('/').pop() ?? path
+              return (
+                <button
+                  key={path}
+                  onClick={() => { void navigate(`/files/${path}`); if (isMobile) setSidebarOpen(false) }}
+                  title={path}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '5px 16px 5px 20px',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {name}
+                </button>
+              )
+            })}
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           {topics.length === 0 && (
             <p style={{ padding: '8px 16px', color: 'var(--text-muted)', fontSize: 12 }}>
