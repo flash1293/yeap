@@ -23,6 +23,9 @@ remindersRouter.post('/', async (c) => {
   if (!body.content || body.content.length > 4096) {
     return c.json({ error: 'content required (max 4096 chars)' }, 400)
   }
+  if (body.script !== undefined && (typeof body.script !== 'string' || body.script.length > 4096)) {
+    return c.json({ error: 'script must be a string (max 4096 chars)' }, 400)
+  }
 
   const now = Date.now()
   let fire_at: number | null = null
@@ -57,6 +60,7 @@ remindersRouter.post('/', async (c) => {
     created_at: now,
     author_mode: body.author_mode ?? 'Reminder',
     meta_type: body.meta_type ?? 'alert',
+    script: body.script ?? null,
   } satisfies typeof reminders.$inferInsert
 
   db.insert(reminders).values(row).run()

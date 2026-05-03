@@ -10,6 +10,7 @@ import cronParser from 'cron-parser'
 
 const DB_PATH = process.env['REMINDER_DB_PATH'] ?? '/data/reminders.db'
 const TICK_MS = parseInt(process.env['SCHEDULER_TICK_MS'] ?? '10000', 10)
+const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] ?? 'http://orchestrator:3000'
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,8 @@ export const reminders = sqliteTable('reminders', {
   created_at: integer('created_at').notNull(),
   author_mode: text('author_mode').notNull().default('Reminder'),
   meta_type: text('meta_type').notNull().default('alert'),
+  /** Shell script; if set, only fire when exit code != 0 */
+  script: text('script'),
 })
 
 export type ReminderRow = typeof reminders.$inferSelect
@@ -48,16 +51,19 @@ sqlite.exec(`
   );
 `)
 
+// Incremental migrations
+try { sqlite.exec('ALTER TABLE reminders ADD COLUMN script TEXT') } catch { /* already exists */ }
+
 export const db = drizzle(sqlite, { schema: { reminders } })
 
 // ── Tick ──────────────────────────────────────────────────────────────────────
 
 export function startScheduler(): void {
-  setInterval(tick, TICK_MS)
+  setInterval(() => { void tick() }, TICK_MS)
   console.log(`[scheduler] Running with ${TICK_MS}ms tick`)
 }
 
-function tick(): void {
+async function tick(): Promise<void> {
   const now = Date.now()
 
   const due = db
@@ -73,7 +79,7 @@ function tick(): void {
 
   for (const reminder of due) {
     try {
-      fireReminder(reminder)
+      await fireReminder(reminder)
     } catch (err) {
       console.error(`[scheduler] Failed to fire reminder ${reminder.id}:`, err)
     }
@@ -92,12 +98,50 @@ function tick(): void {
   }
 }
 
-function fireReminder(reminder: ReminderRow): void {
+async function fireReminder(reminder: ReminderRow): Promise<void> {
+  let content = reminder.content
+
+  // Scripted reminder: run the script; only write the FSAD message if exit code != 0
+  if (reminder.script) {
+    let exit_code: number
+    let scriptOutput: string
+    try {
+      const res = await fetch(
+        `${ORCHESTRATOR_URL}/spawn/exec/${encodeURIComponent(reminder.bot_name)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script: reminder.script, timeout_ms: 30_000 }),
+        },
+      )
+      if (!res.ok) {
+        console.error(`[scheduler] exec endpoint returned ${res.status} for reminder ${reminder.id}`)
+        return // don't fire on exec failure to avoid false positives
+      }
+      const result = (await res.json()) as { exit_code: number; stdout: string; stderr: string }
+      exit_code = result.exit_code
+      scriptOutput = [result.stdout, result.stderr].filter(Boolean).join('\n').trim()
+    } catch (err) {
+      console.error(`[scheduler] Failed to run script for reminder ${reminder.id}:`, err)
+      return
+    }
+
+    if (exit_code === 0) {
+      console.log(`[scheduler] Scripted reminder ${reminder.id} — script exited 0, skipping`)
+      return
+    }
+
+    // Script signalled a problem — append output to the message
+    if (scriptOutput) {
+      content = `${content}\n\n---\nScript output:\n\`\`\`\n${scriptOutput}\n\`\`\``
+    }
+    console.log(`[scheduler] Scripted reminder ${reminder.id} — script exited non-zero, firing`)
+  }
+
   const author = reminder.author_mode === 'bot' ? reminder.bot_name : 'Reminder'
   const msg_path = buildMessagePath(reminder.topic_id, author)
-
   mkdirSync(msg_path, { recursive: true })
-  writeFileSync(join(msg_path, 'content.txt'), reminder.content, 'utf8')
+  writeFileSync(join(msg_path, 'content.txt'), content, 'utf8')
   writeFileSync(
     join(msg_path, 'meta.json'),
     JSON.stringify({ type: reminder.meta_type, reminder_id: reminder.id }),

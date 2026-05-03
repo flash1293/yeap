@@ -4,7 +4,7 @@ import { bots, subscriptions, spawn_log } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { generateBotIcon } from '@yeap/shared'
-import { createAndStartBotContainer, createAndStartCoordinatorContainer, allocateHostPort, stopAndRemoveBotContainer, deleteNginxBotConfig, reloadNginxBots } from '../services/docker.js'
+import { createAndStartBotContainer, createAndStartCoordinatorContainer, allocateHostPort, stopAndRemoveBotContainer, deleteNginxBotConfig, reloadNginxBots, execInBotContainer } from '../services/docker.js'
 import { getBotByName } from '../db/helpers.js'
 import type { SpawnPayload } from '@yeap/shared'
 
@@ -209,4 +209,27 @@ spawnRouter.post('/compact-check/:name', async (c) => {
   }
 
   return c.json({ ok: true })
+})
+
+// POST /spawn/exec/:name — run a shell script inside the bot's container
+spawnRouter.post('/exec/:name', async (c) => {
+  const name = c.req.param('name')
+  const bot = db.select().from(bots).where(eq(bots.name, name)).get()
+  if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
+
+  const body = await c.req.json<{ script: string; timeout_ms?: number }>()
+  if (!body.script || typeof body.script !== 'string') {
+    return c.json({ error: 'script required' }, 400)
+  }
+  if (body.script.length > 4096) {
+    return c.json({ error: 'script too long (max 4096 chars)' }, 400)
+  }
+
+  try {
+    const result = await execInBotContainer(name, body.script, body.timeout_ms ?? 30_000)
+    return c.json(result)
+  } catch (err) {
+    console.error(`[exec] Failed for ${name}:`, err)
+    return c.json({ error: String(err) }, 502)
+  }
 })

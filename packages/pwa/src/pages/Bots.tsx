@@ -56,6 +56,17 @@ export function Bots() {
     return new Date(t).toLocaleString()
   }
 
+  function reminderKindLabel(r: Reminder): string {
+    if (r.script) return r.cron ? 'scripted cron' : 'scripted'
+    return r.cron ? 'cron' : 'one-shot'
+  }
+
+  function reminderKindColor(r: Reminder): { bg: string; fg: string } {
+    if (r.script) return { bg: '#16a34a22', fg: '#4ade80' }
+    if (r.cron) return { bg: '#7c3aed22', fg: '#a78bfa' }
+    return { bg: '#0ea5e922', fg: '#38bdf8' }
+  }
+
   async function handleUnsubscribe(botName: string, topic: string) {
     await unsubscribeBot(botName, topic).catch(() => undefined)
     void load()
@@ -445,17 +456,33 @@ export function Bots() {
                                 display: 'inline-block',
                                 marginRight: 8,
                                 padding: '1px 5px',
-                                background: r.cron ? '#7c3aed22' : '#0ea5e922',
-                                color: r.cron ? '#a78bfa' : '#38bdf8',
+                                background: reminderKindColor(r).bg,
+                                color: reminderKindColor(r).fg,
                                 borderRadius: 3,
                                 fontSize: 10,
                                 fontWeight: 600,
                               }}
                               >
-                                {r.cron ? 'cron' : 'one-shot'}
+                                {reminderKindLabel(r)}
                               </span>
                               topic: #{r.topic_id} · fires: {formatFireTime(r)}
                             </div>
+                            {r.script && (
+                              <div style={{
+                                marginTop: 4,
+                                padding: '4px 6px',
+                                background: 'var(--bg)',
+                                border: '1px solid #16a34a44',
+                                borderRadius: 4,
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                color: '#4ade80',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                              }}>
+                                {r.script.length > 200 ? r.script.slice(0, 197) + '…' : r.script}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

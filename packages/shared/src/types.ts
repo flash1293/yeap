@@ -96,6 +96,8 @@ export type SetReminderPayload = {
   cron?: string
   author_mode?: 'bot' | 'Reminder'
   meta_type?: 'text' | 'alert'
+  /** Shell script to run in the bot's container. Message is only sent if exit code != 0. */
+  script?: string
 }
 
 export type Reminder = {
@@ -109,6 +111,8 @@ export type Reminder = {
   created_at: number
   author_mode: 'bot' | 'Reminder'
   meta_type: 'text' | 'alert'
+  /** If set, this is a scripted reminder: only fires when the script exits non-zero. */
+  script: string | null
 }
 
 // ── HTTP payloads — Orchestrator ──────────────────────────────────────────────

@@ -2,6 +2,7 @@ import Docker from 'dockerode'
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { Writable } from 'node:stream'
 import { db } from '../db/index.js'
 import { bots } from '../db/schema.js'
 import { sql } from 'drizzle-orm'
@@ -205,4 +206,51 @@ export async function stopAndRemoveBotContainer(name: string): Promise<void> {
   }
   try { await container.stop({ t: 5 }) } catch { /* already stopped */ }
   await container.remove({ force: true })
+}
+
+/**
+ * Run a shell script inside a bot's container and return the exit code
+ * plus capped stdout/stderr (max 4 KB each).
+ * Throws if the container is not found or the exec itself fails.
+ */
+export async function execInBotContainer(
+  name: string,
+  script: string,
+  timeoutMs = 30_000,
+): Promise<{ exit_code: number; stdout: string; stderr: string }> {
+  const container = docker.getContainer(containerName(name))
+  const exec = await container.exec({
+    Cmd: ['sh', '-c', script],
+    AttachStdout: true,
+    AttachStderr: true,
+  })
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('exec timed out')), timeoutMs)
+
+    exec.start({ hijack: true }, (err: Error | null, stream: NodeJS.ReadableStream) => {
+      if (err) { clearTimeout(timer); reject(err); return }
+
+      const stdoutBufs: Buffer[] = []
+      const stderrBufs: Buffer[] = []
+      const stdoutSink = new Writable({ write(c, _, cb) { stdoutBufs.push(Buffer.from(c as Buffer)); cb() } })
+      const stderrSink = new Writable({ write(c, _, cb) { stderrBufs.push(Buffer.from(c as Buffer)); cb() } })
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(docker as any).modem.demuxStream(stream, stdoutSink, stderrSink)
+
+      stream.on('end', () => {
+        clearTimeout(timer)
+        exec.inspect().then((info: { ExitCode: number | null }) => {
+          resolve({
+            exit_code: info.ExitCode ?? 1,
+            stdout: Buffer.concat(stdoutBufs).toString('utf8').slice(0, 4096),
+            stderr: Buffer.concat(stderrBufs).toString('utf8').slice(0, 4096),
+          })
+        }).catch(reject)
+      })
+
+      stream.on('error', (e: Error) => { clearTimeout(timer); reject(e) })
+    })
+  })
 }

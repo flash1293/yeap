@@ -94,3 +94,40 @@ export const cancel_reminder = tool({
     return `Reminder ${id} cancelled.`
   },
 })
+
+export const set_scripted_reminder = tool({
+  description:
+    'Set a conditional reminder: a script is run in your container each time it would fire. ' +
+    'The message is only sent to topic_id if the script exits with a non-zero exit code. ' +
+    'stdout/stderr from the script are appended to the message. ' +
+    'Use this for health-checks, threshold monitors, or any "alert if broken" pattern. ' +
+    'Provide either delay_ms (one-shot, milliseconds from now) or cron (recurring, 5-field UTC).',
+  args: {
+    topic_id: tool.schema.string('Topic to receive the alert message when the script signals a problem.'),
+    content: tool.schema.string('Message to send when the script exits non-zero.'),
+    script: tool.schema.string(
+      'Shell script (sh -c) to run in this container. Exit 0 = all good (silent). ' +
+      'Exit non-zero = problem detected (message fires). Keep scripts short and fast.',
+    ),
+    delay_ms: tool.schema
+      .number('One-shot: milliseconds from now. Mutually exclusive with cron.')
+      .optional(),
+    fire_at: tool.schema
+      .number('One-shot: absolute unix timestamp in ms. Mutually exclusive with cron.')
+      .optional(),
+    cron: tool.schema
+      .string('Recurring: 5-field UTC cron expression e.g. "*/5 * * * *" (every 5 min). Mutually exclusive with delay_ms/fire_at.')
+      .optional(),
+  },
+  async execute({ topic_id, content, script, delay_ms, fire_at, cron }) {
+    return postReminder({
+      bot_name: BOT_NAME,
+      topic_id,
+      content,
+      script,
+      ...(delay_ms !== undefined ? { delay_ms } : {}),
+      ...(fire_at !== undefined ? { fire_at } : {}),
+      ...(cron !== undefined ? { cron } : {}),
+    })
+  },
+})

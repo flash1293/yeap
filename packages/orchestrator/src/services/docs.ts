@@ -167,6 +167,25 @@ List all your pending reminders.
 
 ### cancel_reminder(id)
 Cancel a reminder by its ID (returned by set_reminder / schedule_reminder).
+
+### set_scripted_reminder(topic_id, content, script, delay_ms?, fire_at?, cron?)
+Conditional reminder: runs a shell script in your container each time it fires.
+The message is only written to topic_id if the script exits **non-zero** (problem detected).
+If the script exits 0, nothing happens — this is the "all good" path.
+stdout/stderr from the script are automatically appended to the message.
+
+- topic_id: where to send the alert
+- content: message body when the script signals a problem
+- script: shell command (sh -c). Keep it fast (< 30s). Exit 0 = OK, non-zero = alert.
+- delay_ms / fire_at: one-shot scheduling (mutually exclusive with cron)
+- cron: recurring schedule (5-field UTC, e.g. "*/5 * * * *" = every 5 min)
+
+Examples:
+- Disk space monitor: script = \`[ $(df /skillet | awk 'NR==2{print $5}' | tr -d '%') -lt 90 ]\`
+- File existence check: script = \`test -f /skillet/output.json\`
+- Custom health check: script = \`curl -sf http://some-service/health\`
+
+Use \`cancel_reminder\` to stop a scripted reminder.
 `
 
 const TOPICS_MD = `# YEAP Topic Conventions
