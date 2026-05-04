@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { BotAvatar } from './BotAvatar.js'
 import type { Bot, FsadMessage } from '@yeap/shared'
 
@@ -73,8 +74,9 @@ export function MessageBubble({ message, bots, depth = 0, onReply }: Props) {
               lineHeight: 1.6,
               fontSize: 14,
             }}
+            className="md-body"
           >
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
           </div>
         </div>
       </div>

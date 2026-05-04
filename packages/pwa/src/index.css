@@ -29,3 +29,26 @@ html, body, #root {
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 14px;
 }
+
+.md-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.md-body th,
+.md-body td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+}
+
+.md-body th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.md-body tr:nth-child(even) td {
+  background: rgba(255,255,255,0.03);
+}
