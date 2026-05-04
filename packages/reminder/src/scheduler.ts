@@ -78,12 +78,7 @@ async function tick(): Promise<void> {
     .all()
 
   for (const reminder of due) {
-    try {
-      await fireReminder(reminder)
-    } catch (err) {
-      console.error(`[scheduler] Failed to fire reminder ${reminder.id}:`, err)
-    }
-
+    // Advance or delete before firing so concurrent ticks don't double-fire.
     if (reminder.cron) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
@@ -91,9 +86,16 @@ async function tick(): Promise<void> {
         db.update(reminders).set({ next_fire_at: next }).where(eq(reminders.id, reminder.id)).run()
       } catch (err) {
         console.error(`[scheduler] Failed to advance cron for ${reminder.id}:`, err)
+        continue
       }
     } else {
       db.delete(reminders).where(eq(reminders.id, reminder.id)).run()
+    }
+
+    try {
+      await fireReminder(reminder)
+    } catch (err) {
+      console.error(`[scheduler] Failed to fire reminder ${reminder.id}:`, err)
     }
   }
 }
