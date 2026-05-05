@@ -57,6 +57,12 @@ setupRouter.post('/init', async (c) => {
   if (!body.api_key && body.provider !== 'ollama') {
     return c.json({ error: 'API key is required' }, 400)
   }
+  if (body.base_url && !/^https?:\/\/.+/.test(body.base_url)) {
+    return c.json({ error: 'Invalid base URL' }, 400)
+  }
+  if (body.provider === 'litellm' && !body.base_url) {
+    return c.json({ error: 'LiteLLM endpoint URL is required' }, 400)
+  }
 
   const password_hash = await hash(body.pwa_password, 12)
   const secrets_path = process.env['SECRETS_PATH'] ?? '/data/secrets.json'
@@ -65,7 +71,7 @@ setupRouter.post('/init', async (c) => {
   mkdirSync(dirname(secrets_path), { recursive: true })
   writeFileSync(
     secrets_path,
-    JSON.stringify({ provider: body.provider, model: body.model, api_key: body.api_key }),
+    JSON.stringify({ provider: body.provider, model: body.model, api_key: body.api_key, base_url: body.base_url, context_window: body.context_window, max_output: body.max_output }),
     'utf8',
   )
 

@@ -63,7 +63,7 @@ export async function reloadNginxBots(): Promise<void> {
   }
 }
 
-type Secrets = { provider: string; model: string; api_key: string }
+type Secrets = { provider: string; model: string; api_key: string; base_url?: string; context_window?: number; max_output?: number }
 
 function readSecrets(): Secrets {
   return JSON.parse(readFileSync(SECRETS_PATH, 'utf8')) as Secrets
@@ -84,11 +84,48 @@ export function allocateHostPort(): number {
 }
 
 function buildOpencodeConfig(): string {
-  const { provider, model, api_key } = readSecrets()
+  const { provider, model, api_key, base_url, context_window, max_output } = readSecrets()
+  const options: Record<string, string> = { apiKey: api_key }
+  if (base_url) {
+    options.baseURL = base_url
+  }
+
+  if (base_url) {
+    // Custom endpoint (LiteLLM, OpenAI-compatible proxy) — register a dynamic
+    // provider so OpenCode does not validate against its built-in list.
+    const modelKey = model
+    const contextWindow = context_window ?? 200000
+    const maxOutput = max_output ?? 8096
+    return JSON.stringify({
+      model: `litellm/${modelKey}`,
+      provider: {
+        litellm: {
+          npm: '@ai-sdk/openai-compatible',
+          name: 'LiteLLM',
+          options,
+          models: {
+            [modelKey]: {
+              name: modelKey.split('/').pop() ?? modelKey,
+              limit: { context: contextWindow, output: maxOutput },
+            },
+          },
+        },
+      },
+      plugin: ['/root/.config/opencode/plugins/yeap.js'],
+      tools: { question: false },
+      permission: {
+        external_directory: { '/**': 'allow' },
+        bash: { '/**': 'allow' },
+      },
+    })
+  }
+
+  // Built-in provider — original logic
+  const providerKey = model.includes('/') ? model.split('/')[0]! : provider
   return JSON.stringify({
     model,
     provider: {
-      [provider]: { options: { apiKey: api_key } },
+      [providerKey]: { options },
     },
     plugin: ['/root/.config/opencode/plugins/yeap.js'],
     tools: { question: false },
@@ -97,6 +134,17 @@ function buildOpencodeConfig(): string {
       bash: { '/**': 'allow' },
     },
   })
+}
+
+/** The model string exposed to the bot via BOT_MODEL env so the YEAP plugin
+ * can override the session model correctly. Must match the provider key used
+ * in the OpenCode config. */
+function getBotModel(): string {
+  const { model, base_url } = readSecrets()
+  if (base_url) {
+    return `litellm/${model}`
+  }
+  return model
 }
 
 export async function createAndStartBotContainer(
@@ -118,7 +166,7 @@ export async function createAndStartBotContainer(
     Env: [
       `BOT_NAME=${name}`,
       `BOT_ROLE=${role}`,
-      `BOT_MODEL=${model}`,
+      `BOT_MODEL=${getBotModel()}`,
       `GIT_AUTHOR_NAME=${name}`,
       `GIT_AUTHOR_EMAIL=${name.toLowerCase().replace(/\s+/g, '.')}@yeap.local`,
       `ORCHESTRATOR_URL=http://orchestrator:3000`,
@@ -161,7 +209,6 @@ export async function createAndStartCoordinatorContainer(
   const slug = name.toLowerCase().replace(/[\s_]+/g, '-')
   const skilletVolume = `yeap-skillet-${slug}`
   const opencodeVolume = `yeap-opencode-${slug}`
-  const { model } = readSecrets()
 
   const container = await docker.createContainer({
     name: cname,
@@ -171,7 +218,7 @@ export async function createAndStartCoordinatorContainer(
     Env: [
       `BOT_NAME=${name}`,
       `BOT_ROLE=${role}`,
-      `BOT_MODEL=${model}`,
+      `BOT_MODEL=${getBotModel()}`,
       `IS_COORDINATOR=true`,
       `GIT_AUTHOR_NAME=${name}`,
       `GIT_AUTHOR_EMAIL=${name.toLowerCase()}@yeap.local`,

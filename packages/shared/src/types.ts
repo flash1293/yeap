@@ -82,6 +82,9 @@ export type SetupInitPayload = {
   provider: string
   model: string
   api_key: string
+  base_url?: string
+  context_window?: number
+  max_output?: number
   pwa_password: string
 }
 

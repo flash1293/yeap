@@ -17,6 +17,9 @@ FROM node:22 AS final
 # Install opencode globally (postinstall downloads the Go binary — needs glibc, not musl)
 RUN npm install -g opencode-ai@latest
 
+# Install OpenAI-compatible provider SDK for LiteLLM / custom proxies
+RUN npm install -g @ai-sdk/openai-compatible@latest
+
 # Install git (needed by git tools in the plugin)
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 

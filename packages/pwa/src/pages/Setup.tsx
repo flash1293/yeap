@@ -44,6 +44,7 @@ const PROVIDER_MODELS: Record<string, { label: string; models: string[] }> = {
   },
   groq: { label: 'Groq', models: [] },
   ollama: { label: 'Ollama (local)', models: [] },
+  litellm: { label: 'Custom LiteLLM', models: [] },
 }
 
 const PROVIDER_KEYS = Object.keys(PROVIDER_MODELS)
@@ -56,6 +57,7 @@ export function Setup({ onComplete }: Props) {
   const [provider, setProvider] = useState(DEFAULT_PROVIDER)
   const [model, setModel] = useState(PROVIDER_MODELS[DEFAULT_PROVIDER]!.models[0] ?? '')
   const [apiKey, setApiKey] = useState('')
+  const [baseUrl, setBaseUrl] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState('')
@@ -77,6 +79,8 @@ export function Setup({ onComplete }: Props) {
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     if (password !== confirm) { setError('Passwords do not match.'); return }
     if (provider !== 'ollama' && !apiKey.trim()) { setError('API key is required for this provider.'); return }
+    if (provider === 'litellm' && !baseUrl.trim()) { setError('LiteLLM endpoint URL is required.'); return }
+    if (baseUrl.trim() && !/^https?:\/\/.+/.test(baseUrl.trim())) { setError('Base URL must start with http:// or https://'); return }
 
     setLoading(true)
     try {
@@ -86,6 +90,7 @@ export function Setup({ onComplete }: Props) {
         model: model.trim(),
         api_key: apiKey.trim(),
         pwa_password: password,
+        ...(baseUrl.trim() ? { base_url: baseUrl.trim() } : {}),
       }
       await postSetupInit(payload)
       onComplete()
@@ -189,6 +194,22 @@ export function Setup({ onComplete }: Props) {
             />
           </label>
         )}
+
+        <label style={label}>
+          {provider === 'litellm' ? 'LiteLLM endpoint' : 'Custom endpoint (optional)'}
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            {provider === 'litellm'
+              ? 'The base URL of your LiteLLM proxy'
+              : 'LiteLLM proxy, OpenAI-compatible proxy, etc.'}
+          </span>
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://litellm.example.com/v1"
+            style={input}
+          />
+        </label>
 
         <label style={label}>
           Master password
