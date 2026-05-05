@@ -78,6 +78,14 @@ async function getTopicCosubscribers(topic_id: string): Promise<string[]> {
 
 // ─── Message delivery ─────────────────────────────────────────────────────────
 
+async function compactCheck(): Promise<void> {
+  try {
+    await fetch(`${ORCHESTRATOR_URL}/spawn/compact-check/${encodeURIComponent(BOT_NAME)}`, { method: 'POST' })
+  } catch {
+    // non-critical
+  }
+}
+
 async function deliverToSession(session_id: string, prompt: string): Promise<void> {
   const body: Record<string, unknown> = {
     parts: [{ type: 'text', text: prompt }],
@@ -239,10 +247,13 @@ async function poll(): Promise<void> {
               } catch {
                 // no meta, use default
               }
+              const cosubsExAuthor = (cosubsCache.get(topic_id) ?? []).filter(
+                (n) => n.toLowerCase() !== parsed.author_name.toLowerCase(),
+              )
               pending.push({
                 topic_id,
                 msgDir,
-                prompt: buildPrompt(topic_id, msgDir, parsed.author_name, content, msgType, cosubsCache.get(topic_id) ?? []),
+                prompt: buildPrompt(topic_id, msgDir, parsed.author_name, content, msgType, cosubsExAuthor),
               })
             }
           }
@@ -296,10 +307,13 @@ async function poll(): Promise<void> {
           // no meta, use default
         }
 
+        const cosubsExAuthor = (cosubsCache.get(topic_id) ?? []).filter(
+          (n) => n.toLowerCase() !== parsed.author_name.toLowerCase(),
+        )
         pending.push({
           topic_id,
           msgDir: replyDir,
-          prompt: buildReplyPrompt(topic_id, replyDir, msgDir, parsed.author_name, content, msgType, cosubsCache.get(topic_id) ?? []),
+          prompt: buildReplyPrompt(topic_id, replyDir, msgDir, parsed.author_name, content, msgType, cosubsExAuthor),
         })
       }
     }
@@ -314,6 +328,7 @@ async function poll(): Promise<void> {
     )
     try {
       await deliverToSession(session_id, prompt)
+      void compactCheck()
       // Small gap between deliveries
       await new Promise<void>((r) => setTimeout(r, 500))
     } catch (err) {

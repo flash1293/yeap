@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { CHAT_ROOT, parseMessagePath } from '@yeap/shared'
 import type { FsadEvent, MessageMeta } from '@yeap/shared'
 import { ssebus } from './sse.js'
-import { deliverToSubscribers } from './deliver.js'
 
 export function startWatcher(): void {
   const depth = parseInt(process.env['CHOKIDAR_DEPTH'] ?? '4', 10)
@@ -73,7 +72,6 @@ async function handleNewDir(abs_path: string): Promise<void> {
         }
 
   ssebus.broadcast(event)
-  await deliverToSubscribers(event)
 }
 
 function readMeta(dir: string): MessageMeta | null {
