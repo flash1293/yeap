@@ -126,7 +126,7 @@ export async function createAndStartBotContainer(
       `SHARED_ROOT=/shared`,
       `OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_ENDPOINT}`,
       `OTEL_EXPORTER_OTLP_HEADERS=${OTEL_HEADERS}`,
-      `OTEL_RESOURCE_ATTRIBUTES=service.name=${botServiceName},deployment.environment=production`,
+      `OTEL_RESOURCE_ATTRIBUTES=service.name=yeap-bot-${slug},deployment.environment=production`,
       `OPENCODE_CONFIG_CONTENT=${buildOpencodeConfig()}`,
     ],
     HostConfig: {
