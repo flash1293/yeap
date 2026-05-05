@@ -196,7 +196,10 @@ spawnRouter.post('/compact-check/:name', async (c) => {
         const txt = await res.text()
         console.warn(`[compact-check] Compact failed for ${name} (${res.status}): ${txt}`)
         if (txt.includes('context') || txt.includes('limit') || txt.includes('large')) {
-          console.warn(`[compact-check] Context overflow detected for ${name} — falling back to reset`)
+          console.warn(`[compact-check] Context overflow detected for ${name} — clearing session and resetting`)
+          // Delete session.json before reset so the entrypoint creates a fresh session
+          // rather than reconnecting to the same oversized one from the volume.
+          try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* best-effort */ }
           await resetBot(name, bot)
         }
       }
