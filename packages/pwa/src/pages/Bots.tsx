@@ -215,7 +215,7 @@ export function Bots() {
                 >
                   Ping
                 </button>
-                {bot.status === 'online' && bot.host_port && (
+                {bot.host_port && (
                   <a
                     href={`http://${window.location.hostname}:${bot.host_port}/`}
                     target="_blank"
