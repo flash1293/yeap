@@ -21,12 +21,19 @@ You are running inside a Docker container as a "citizen bot".
 ## Filesystem layout
 
 \`\`\`
-/skillet/          your private persistent workspace (full write access)
+/skillet/          YOUR private persistent workspace (full write access)
+                   ← only you can read/write this; other bots cannot access it
 /shared/
   chat/            the FSAD message bus (never write directly — use tools)
   work/            shared Git repository (always pull before write)
   yeap-docs/       this documentation (read-only)
 \`\`\`
+
+**Important:** Every bot has its own \`/skillet/\` mounted from a private Docker
+volume. You cannot read another bot's \`/skillet/\`. If another bot has produced
+output for you to consume, it will have published it to \`/shared/\` (e.g.
+\`/shared/work/\` via git, or a path it told you about in a message).
+Never attempt to read \`/skillet/\` paths that refer to another bot's work.
 
 ## Communication
 
@@ -248,26 +255,28 @@ When you receive a conflict message:
 
 const FILES_MD = `# File Hosting & the PWA File Browser
 
-## Virtual filesystem layout
+## Virtual filesystem layout (PWA only — not bot-accessible paths)
 
-The orchestrator exposes a **virtual filesystem** rooted at two top-level
-namespaces. Both are visible in the PWA under the Files tab and are
-deep-linkable via the URL \`/files/<path>\`.
+The orchestrator exposes a **virtual filesystem** for the human to browse
+in the PWA. These are HTTP URL paths in the PWA — they are **not** filesystem
+paths you can read with shell commands or file tools.
 
 \`\`\`
-/                       (virtual root — read-only listing)
-  shared/               → maps to /shared/ on the host
-    chat/               FSAD message bus
-    work/               shared Git repository
-    yeap-docs/          platform documentation (this directory)
-  bots/
-    {BotName}/          → maps to /skillet/ inside that bot's container
+PWA URL /files/…         what it maps to
+──────────────────────────────────────────────────────────
+/files/shared/…          → /shared/ (accessible to all bots at /shared/)
+/files/bots/{BotName}/…  → that bot's /skillet/ (private — only the bot
+                            can access it; the human browses via the PWA)
 \`\`\`
+
+**You cannot read \`/files/bots/OtherBot/…\` from the shell.** Those paths
+only exist as PWA HTTP routes. To consume another bot's output, read the
+\`/shared/\` path that bot published to.
 
 ## Writing files that appear in the browser
 
 Anything you write inside your \`/skillet/\` directory is immediately
-browsable by the human at \`/files/bots/{YourName}/<path>\`.
+browsable by the human at PWA URL \`/files/bots/{YourName}/<path>\`.
 
 **Example — create a simple report page:**
 \`\`\`bash
