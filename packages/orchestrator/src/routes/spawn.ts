@@ -105,38 +105,33 @@ spawnRouter.delete('/:name', async (c) => {
   return c.json({ ok: true, name })
 })
 
+// Shared reset logic used by the reset endpoint and the compact overflow fallback
+async function resetBot(name: string, bot: typeof import('../db/schema.js').bots.$inferSelect): Promise<string> {
+  await stopAndRemoveBotContainer(name)
+  const hostPort = bot.host_port ?? allocateHostPort()
+  const container_id = bot.is_coordinator
+    ? await createAndStartCoordinatorContainer(name, hostPort)
+    : await createAndStartBotContainer(name, bot.role_description, hostPort)
+  db.update(bots)
+    .set({ status: 'offline', host_port: hostPort, session_id: null, last_seen: null, messages_since_compact: 0 })
+    .where(eq(bots.name, name))
+    .run()
+  return container_id
+}
+
 // POST /spawn/reset/:name — recreate the container (keep volumes/memory, clear session leak cruft)
 spawnRouter.post('/reset/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
   if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
 
-  // Stop and remove the old container (volumes are named and survive)
-  try {
-    await stopAndRemoveBotContainer(name)
-  } catch (err) {
-    console.error('[reset] Failed to stop container:', err)
-    return c.json({ error: 'Failed to stop container' }, 500)
-  }
-
-  // Recreate with the same role and port
-  const hostPort = bot.host_port ?? allocateHostPort()
   let container_id: string
   try {
-    if (bot.is_coordinator) {
-      container_id = await createAndStartCoordinatorContainer(name, hostPort)
-    } else {
-      container_id = await createAndStartBotContainer(name, bot.role_description, hostPort)
-    }
+    container_id = await resetBot(name, bot)
   } catch (err) {
-    console.error('[reset] Failed to recreate container:', err)
-    return c.json({ error: 'Failed to recreate container' }, 500)
+    console.error('[reset] Failed:', err)
+    return c.json({ error: 'Failed to reset container' }, 500)
   }
-
-  db.update(bots)
-    .set({ status: 'offline', host_port: hostPort, session_id: null, last_seen: null })
-    .where(eq(bots.name, name))
-    .run()
 
   return c.json({ ok: true, container_id })
 })
@@ -171,9 +166,10 @@ spawnRouter.post('/compact/:name', async (c) => {
   return c.json({ ok: true })
 })
 
-// POST /spawn/compact-check/:name — called by reminder after each delivery
-// Increments the counter and triggers /compact when threshold is reached
-const AUTO_COMPACT_THRESHOLD = 20
+// POST /spawn/compact-check/:name — called after each message delivery
+// Increments the counter and triggers /compact when threshold is reached.
+// If compact fails due to context overflow, falls back to a container reset.
+const AUTO_COMPACT_THRESHOLD = 10
 
 spawnRouter.post('/compact-check/:name', async (c) => {
   const name = c.req.param('name')
@@ -190,11 +186,20 @@ spawnRouter.post('/compact-check/:name', async (c) => {
     console.log(`[compact-check] Auto-compacting ${name} at ${newCount} messages`)
     const endpoint = `${bot.opencode_url}/session/${bot.session_id}/compact`
     try {
-      await fetch(endpoint, { method: 'POST' })
-      db.update(bots)
-        .set({ messages_since_compact: 0, last_compact_at: Date.now() })
-        .where(eq(bots.name, name))
-        .run()
+      const res = await fetch(endpoint, { method: 'POST' })
+      if (res.ok) {
+        db.update(bots)
+          .set({ messages_since_compact: 0, last_compact_at: Date.now() })
+          .where(eq(bots.name, name))
+          .run()
+      } else {
+        const txt = await res.text()
+        console.warn(`[compact-check] Compact failed for ${name} (${res.status}): ${txt}`)
+        if (txt.includes('context') || txt.includes('limit') || txt.includes('large')) {
+          console.warn(`[compact-check] Context overflow detected for ${name} — falling back to reset`)
+          await resetBot(name, bot)
+        }
+      }
     } catch (err) {
       console.error(`[compact-check] Failed to auto-compact ${name}:`, err)
     }
