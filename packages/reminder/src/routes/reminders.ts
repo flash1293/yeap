@@ -11,10 +11,13 @@ export const remindersRouter = new Hono()
 remindersRouter.post('/', async (c) => {
   const body = await c.req.json<SetReminderPayload>()
 
-  // Validate scheduling: exactly one method
-  const methods = [body.delay_ms, body.fire_at, body.cron].filter((v) => v !== undefined)
-  if (methods.length !== 1) {
-    return c.json({ error: 'Provide exactly one of: delay_ms, fire_at, cron' }, 400)
+  // Validate scheduling: exactly one method.
+  // Treat 0 and "" as absent — models often send zero-valued optional fields.
+  const hasDelayMs = typeof body.delay_ms === 'number' && body.delay_ms > 0
+  const hasFireAt = typeof body.fire_at === 'number' && body.fire_at > 0
+  const hasCron = typeof body.cron === 'string' && body.cron.trim() !== ''
+  if ([hasDelayMs, hasFireAt, hasCron].filter(Boolean).length !== 1) {
+    return c.json({ error: 'Provide exactly one of: delay_ms (>0), fire_at (>0), cron (non-empty)' }, 400)
   }
   if (!body.bot_name) return c.json({ error: 'bot_name required' }, 400)
   if (!body.topic_id || !/^[a-z0-9\-]{1,64}$/.test(body.topic_id)) {
@@ -32,17 +35,16 @@ remindersRouter.post('/', async (c) => {
   let cron: string | null = null
   let next_fire_at: number | null = null
 
-  if (body.delay_ms !== undefined) {
-    if (body.delay_ms <= 0) return c.json({ error: 'delay_ms must be > 0' }, 400)
-    fire_at = now + body.delay_ms
-  } else if (body.fire_at !== undefined) {
-    if (body.fire_at <= now) return c.json({ error: 'fire_at must be in the future' }, 400)
-    fire_at = body.fire_at
-  } else if (body.cron !== undefined) {
+  if (hasDelayMs) {
+    fire_at = now + body.delay_ms!
+  } else if (hasFireAt) {
+    if (body.fire_at! <= now) return c.json({ error: 'fire_at must be in the future' }, 400)
+    fire_at = body.fire_at!
+  } else if (hasCron) {
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      next_fire_at = (cronParser.parseExpression(body.cron).next() as { getTime(): number }).getTime()
-      cron = body.cron
+      next_fire_at = (cronParser.parseExpression(body.cron!.trim()).next() as { getTime(): number }).getTime()
+      cron = body.cron!.trim()
     } catch {
       return c.json({ error: 'Invalid cron expression' }, 400)
     }
