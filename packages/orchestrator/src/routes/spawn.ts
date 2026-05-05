@@ -173,7 +173,7 @@ spawnRouter.post('/compact/:name', async (c) => {
 
 // POST /spawn/compact-check/:name — called by reminder after each delivery
 // Increments the counter and triggers /compact when threshold is reached
-const AUTO_COMPACT_THRESHOLD = 50
+const AUTO_COMPACT_THRESHOLD = 20
 
 spawnRouter.post('/compact-check/:name', async (c) => {
   const name = c.req.param('name')
