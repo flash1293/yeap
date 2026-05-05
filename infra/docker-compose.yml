@@ -22,17 +22,6 @@ networks:
 # ─────────────────────────────────────────────────────────────────────────────
 services:
 
-  # ── Jaeger (observability) ─────────────────────────────────────────────────
-  jaeger:
-    image: cr.jaegertracing.io/jaegertracing/jaeger:2.17.0
-    container_name: yeap-jaeger
-    ports:
-      - "16686:16686"   # Jaeger UI
-      - "4318:4318"     # OTLP HTTP
-    networks:
-      - yeap-net
-    restart: unless-stopped
-
   # ── Orchestrator ──────────────────────────────────────────────────────────
   orchestrator:
     build:
@@ -45,7 +34,9 @@ services:
       PORT: "3000"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET env var is required}"
       DB_PATH: "/data/registry.db"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
+      OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_ORCHESTRATOR:-service.name=yeap-orchestrator,deployment.environment=production}"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared
@@ -59,8 +50,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    depends_on:
-      - jaeger
 
   # ── Reminder ──────────────────────────────────────────────────────────────
   reminder:
@@ -74,7 +63,9 @@ services:
       PORT: "3001"
       ORCHESTRATOR_URL: "http://orchestrator:3000"
       DB_PATH: "/data/reminders.db"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
+      OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_REMINDER:-service.name=yeap-reminder,deployment.environment=production}"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared

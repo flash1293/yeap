@@ -1,7 +1,17 @@
 import type { Hooks } from '@opencode-ai/plugin'
 
 const OTEL_ENDPOINT = process.env['OTEL_EXPORTER_OTLP_ENDPOINT']
+const OTEL_HEADERS_RAW = process.env['OTEL_EXPORTER_OTLP_HEADERS'] ?? ''
 const BOT_NAME = process.env['BOT_NAME'] ?? 'UnknownBot'
+
+function parseOtelHeaders(raw: string): Record<string, string> {
+  const headers: Record<string, string> = {}
+  for (const pair of raw.split(',')) {
+    const eq = pair.indexOf('=')
+    if (eq > 0) headers[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim()
+  }
+  return headers
+}
 
 // Lazy-init SDK — only loaded when the endpoint is configured.
 let tracer: { startSpan(name: string): ActiveSpan } | null = null
@@ -27,6 +37,7 @@ async function getTracer(): Promise<typeof tracer> {
     }),
     traceExporter: new OTLPTraceExporter({
       url: `${OTEL_ENDPOINT}/v1/traces`,
+      headers: parseOtelHeaders(OTEL_HEADERS_RAW),
     }),
   })
   sdk.start()

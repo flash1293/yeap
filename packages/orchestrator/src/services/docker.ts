@@ -14,6 +14,8 @@ const SECRETS_PATH = process.env['SECRETS_PATH'] ?? '/data/secrets.json'
 const NGINX_BOTS_CONTAINER = process.env['NGINX_BOTS_CONTAINER'] ?? 'yeap-nginx-bots'
 const NGINX_CONF_DIR = '/data/nginx-bots'
 const HTPASSWD_PATH = '/data/htpasswd'
+const OTEL_ENDPOINT = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? ''
+const OTEL_HEADERS = process.env['OTEL_EXPORTER_OTLP_HEADERS'] ?? ''
 
 export const docker = new Docker({ socketPath: DOCKER_SOCKET })
 
@@ -122,7 +124,9 @@ export async function createAndStartBotContainer(
       `ORCHESTRATOR_URL=http://orchestrator:3000`,
       `REMINDER_URL=http://reminder:3001`,
       `SHARED_ROOT=/shared`,
-      `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318`,
+      `OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_ENDPOINT}`,
+      `OTEL_EXPORTER_OTLP_HEADERS=${OTEL_HEADERS}`,
+      `OTEL_RESOURCE_ATTRIBUTES=service.name=${botServiceName},deployment.environment=production`,
       `OPENCODE_CONFIG_CONTENT=${buildOpencodeConfig()}`,
     ],
     HostConfig: {
@@ -174,7 +178,9 @@ export async function createAndStartCoordinatorContainer(
       `ORCHESTRATOR_URL=http://orchestrator:3000`,
       `REMINDER_URL=http://reminder:3001`,
       `SHARED_ROOT=/shared`,
-      `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318`,
+      `OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_ENDPOINT}`,
+      `OTEL_EXPORTER_OTLP_HEADERS=${OTEL_HEADERS}`,
+      `OTEL_RESOURCE_ATTRIBUTES=service.name=yeap-bot-${name.toLowerCase().replace(/[\s_]+/g, '-')},deployment.environment=production`,
       `OPENCODE_CONFIG_CONTENT=${buildOpencodeConfig()}`,
     ],
     HostConfig: {
