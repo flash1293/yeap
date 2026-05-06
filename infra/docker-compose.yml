@@ -46,6 +46,7 @@ services:
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET env var is required}"
       DB_PATH: "/data/registry.db"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      BOT_MEMORY_MB: "${BOT_MEMORY_MB:-600}"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared

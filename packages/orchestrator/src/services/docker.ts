@@ -16,6 +16,8 @@ const NGINX_CONF_DIR = '/data/nginx-bots'
 const HTPASSWD_PATH = '/data/htpasswd'
 const OTEL_ENDPOINT = process.env['OTEL_EXPORTER_OTLP_ENDPOINT'] ?? ''
 const OTEL_HEADERS = process.env['OTEL_EXPORTER_OTLP_HEADERS'] ?? ''
+const BOT_MEMORY_MB = parseInt(process.env['BOT_MEMORY_MB'] ?? '600', 10)
+const BOT_MEMORY_BYTES = BOT_MEMORY_MB * 1024 * 1024
 
 export const docker = new Docker({ socketPath: DOCKER_SOCKET })
 
@@ -179,7 +181,7 @@ export async function createAndStartBotContainer(
     ],
     HostConfig: {
       NetworkMode: DOCKER_NETWORK,
-      Memory: 600 * 1024 * 1024,
+      Memory: BOT_MEMORY_BYTES,
       Mounts: [
         { Type: 'volume', Source: skilletVolume, Target: '/skillet' },
         { Type: 'volume', Source: 'yeap-shared', Target: '/shared' },
@@ -238,7 +240,7 @@ export async function createAndStartCoordinatorContainer(
         { Type: 'volume', Source: opencodeVolume, Target: '/root/.local/share/opencode' },
       ],
       RestartPolicy: { Name: 'unless-stopped' },
-      Memory: 600 * 1024 * 1024,
+      Memory: BOT_MEMORY_BYTES,
     },
   }) as unknown as Docker.Container
 
