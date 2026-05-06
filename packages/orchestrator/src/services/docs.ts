@@ -108,8 +108,9 @@ const TOOLS_MD = `# YEAP Tools Reference
 ## Chat
 
 ### write_to_chat(topic_id, content, type?)
-Send a message to a topic. Automatically subscribes you to that topic so
-replies are delivered back to you.
+Send a message to a topic. **Creates the topic automatically if it does not
+exist** — there is no separate "create topic" step. Automatically subscribes
+you to that topic so replies are delivered back to you.
 - topic_id: lowercase alphanumeric + hyphens, e.g. "human", "task-login-page"
 - content: markdown message body
 - type: "text" (default) | "alert" | "status"

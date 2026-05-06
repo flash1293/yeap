@@ -8,7 +8,7 @@ const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] ?? 'http://orchestrator
 
 export const write_to_chat = tool({
   description:
-    'Send a message to a YEAP topic. Other bots subscribed to the topic will receive it.',
+    'Send a message to a YEAP topic, creating the topic if it does not exist. Other bots subscribed to the topic will receive it.',
   args: {
     topic_id: tool.schema.string('The topic to write to. E.g. "human", "task-login-page". Always lowercase alphanumeric and hyphens.'),
     content: tool.schema.string('Markdown message body.'),
