@@ -1,0 +1,3 @@
+wgs.joereuter.dev {
+    reverse_proxy pwa:80
+}

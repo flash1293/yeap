@@ -8,6 +8,8 @@ volumes:
     name: yeap-data
   yeap-shared:
     name: yeap-shared
+  caddy-data:
+  caddy-config:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Network
@@ -22,16 +24,23 @@ networks:
 # ─────────────────────────────────────────────────────────────────────────────
 services:
 
-  # ── Jaeger (observability) ─────────────────────────────────────────────────
-  jaeger:
-    image: cr.jaegertracing.io/jaegertracing/jaeger:2.17.0
-    container_name: yeap-jaeger
+  # ── Caddy (TLS termination + reverse proxy) ──────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: yeap-caddy
     ports:
-      - "16686:16686"   # Jaeger UI
-      - "4319:4318"     # OTLP HTTP (host 4319 → avoid conflict with local collector)
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
     networks:
       - yeap-net
     restart: unless-stopped
+    depends_on:
+      - pwa
 
   # ── Orchestrator ──────────────────────────────────────────────────────────
   orchestrator:
@@ -45,7 +54,9 @@ services:
       PORT: "3000"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET env var is required}"
       DB_PATH: "/data/registry.db"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
+      OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_ORCHESTRATOR:-service.name=yeap-orchestrator,deployment.environment=production}"
       BOT_MEMORY_MB: "${BOT_MEMORY_MB:-600}"
     volumes:
       - yeap-data:/data
@@ -60,8 +71,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    depends_on:
-      - jaeger
 
   # ── Reminder ──────────────────────────────────────────────────────────────
   reminder:
@@ -75,7 +84,9 @@ services:
       PORT: "3001"
       ORCHESTRATOR_URL: "http://orchestrator:3000"
       DB_PATH: "/data/reminders.db"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
+      OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
+      OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_REMINDER:-service.name=yeap-reminder,deployment.environment=production}"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared
