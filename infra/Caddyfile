@@ -1,7 +1,7 @@
 {$CADDY_DOMAIN} {
     handle_path /llmapi* {
         basicauth {
-            admin {$CADDY_ADMIN_PASSWORD_HASH}
+            yeap {$CADDY_ADMIN_PASSWORD_HASH}
         }
         reverse_proxy freellmapi:3001
     }
