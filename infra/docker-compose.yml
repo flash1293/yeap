@@ -10,6 +10,7 @@ volumes:
     name: yeap-shared
   caddy-data:
   caddy-config:
+  freellmapi-data:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Network
@@ -23,6 +24,26 @@ networks:
 # Services
 # ─────────────────────────────────────────────────────────────────────────────
 services:
+
+  # ── FreeLLMAPI (optional OpenAI-compatible free-tier aggregator) ──────────
+  freellmapi:
+    build:
+      context: .
+      dockerfile: freellmapi.Dockerfile
+    image: yeap-freellmapi:latest
+    container_name: yeap-freellmapi
+    ports:
+      - "3002:3001"   # Admin dashboard reachable on host port 3002
+    environment:
+      PORT: "3001"
+      ENCRYPTION_KEY: "${FREELLMAPI_ENCRYPTION_KEY:?FREELLMAPI_ENCRYPTION_KEY env var is required}"
+    volumes:
+      - freellmapi-data:/app/data
+    networks:
+      - yeap-net
+    restart: unless-stopped
+    profiles:
+      - freellmapi
 
   # ── Caddy (TLS termination + reverse proxy) ──────────────────────────────
   caddy:
