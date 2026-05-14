@@ -218,6 +218,29 @@ spawnRouter.post('/compact-check/:name', async (c) => {
   return c.json({ ok: true })
 })
 
+// POST /spawn/clear-session/:name — delete the standing session file and recreate the container.
+// The plugin will create a brand-new OpenCode session on startup, including the initial
+// orientation prompt. Unlike /reset, this guarantees no stale session history is reused.
+spawnRouter.post('/clear-session/:name', async (c) => {
+  const name = c.req.param('name')
+  const bot = db.select().from(bots).where(eq(bots.name, name)).get()
+  if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
+
+  // Best-effort: remove the session file while the container is still running.
+  // If the container is already stopped this will fail silently — that's fine.
+  try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* already gone */ }
+
+  let container_id: string
+  try {
+    container_id = await resetBot(name, bot)
+  } catch (err) {
+    console.error('[clear-session] Failed:', err)
+    return c.json({ error: 'Failed to reset container' }, 500)
+  }
+
+  return c.json({ ok: true, container_id })
+})
+
 // POST /spawn/exec/:name — run a shell script inside the bot's container
 spawnRouter.post('/exec/:name', async (c) => {
   const name = c.req.param('name')
