@@ -8,7 +8,7 @@ WORKDIR /app
 
 RUN npm ci
 
-RUN npm run build
+RUN VITE_BASE=/llmapi/ npm run build
 
 EXPOSE 3001
 
