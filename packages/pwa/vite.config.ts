@@ -9,6 +9,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        navigateFallbackDenylist: [/^\/llmapi/],
+      },
       manifest: {
         name: 'YEAP',
         short_name: 'YEAP',
