@@ -55,6 +55,7 @@ services:
       - "443:443/udp"
     environment:
       CADDY_DOMAIN: "${CADDY_DOMAIN:?CADDY_DOMAIN env var is required}"
+      CADDY_ADMIN_PASSWORD_HASH: "${CADDY_ADMIN_PASSWORD_HASH:?CADDY_ADMIN_PASSWORD_HASH env var is required}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
