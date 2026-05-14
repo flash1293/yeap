@@ -86,6 +86,21 @@ async function compactCheck(): Promise<void> {
   }
 }
 
+/** Called when message delivery fails due to context overflow. Asks the
+ * orchestrator to compact (or reset) the session so the bot can recover. */
+async function requestSessionRecovery(): Promise<void> {
+  try {
+    await fetch(`${ORCHESTRATOR_URL}/spawn/compact/${encodeURIComponent(BOT_NAME)}`, { method: 'POST' })
+  } catch {
+    // non-critical
+  }
+}
+
+function isOverflowError(err: unknown): boolean {
+  const msg = String(err).toLowerCase()
+  return msg.includes('too large') || msg.includes('context') || msg.includes('limit') || msg.includes('large')
+}
+
 async function deliverToSession(session_id: string, prompt: string): Promise<void> {
   const body: Record<string, unknown> = {
     parts: [{ type: 'text', text: prompt }],
@@ -333,6 +348,10 @@ async function poll(): Promise<void> {
       await new Promise<void>((r) => setTimeout(r, 500))
     } catch (err) {
       console.error(`[yeap-watcher] Failed to deliver:`, err)
+      if (isOverflowError(err)) {
+        console.warn(`[yeap-watcher] Context overflow detected — requesting session recovery`)
+        void requestSessionRecovery()
+      }
     }
   }
 }

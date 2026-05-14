@@ -137,6 +137,7 @@ spawnRouter.post('/reset/:name', async (c) => {
 })
 
 // POST /spawn/compact/:name — send /compact to the bot's standing session
+// If the session is too large to compact, falls back to a full container reset.
 spawnRouter.post('/compact/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
@@ -151,6 +152,12 @@ spawnRouter.post('/compact/:name', async (c) => {
     if (!res.ok) {
       const txt = await res.text()
       console.error(`[compact] OpenCode returned ${res.status}: ${txt}`)
+      if (txt.includes('context') || txt.includes('limit') || txt.includes('large') || txt.includes('too large')) {
+        console.warn(`[compact] Context overflow detected for ${name} — clearing session and resetting`)
+        try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* best-effort */ }
+        await resetBot(name, bot)
+        return c.json({ ok: true, reset: true })
+      }
       return c.json({ error: `OpenCode responded ${res.status}` }, 502)
     }
   } catch (err) {
