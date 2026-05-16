@@ -11,6 +11,7 @@ const MM_TEAM_ID_ENV = process.env['MATTERMOST_TEAM_ID'] ?? ''
 export type MMPost = {
   id: string
   channel_id: string
+  channel_name?: string
   user_id: string
   message: string
   root_id: string
@@ -214,6 +215,11 @@ export function startMattermostWebSocket(onPost: MMPostHandler): WebSocket {
 
     // Skip own posts
     if (post.user_id === MM_USER_ID) return
+
+    // Attach channel_name from the WS event data (available in posted events)
+    if (data['channel_name']) {
+      post.channel_name = data['channel_name'] as string
+    }
 
     onPost(post)
   })

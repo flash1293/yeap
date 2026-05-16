@@ -28,7 +28,7 @@ async function main(): Promise<void> {
   const { is_new } = await registerBot()
 
   // Start Mattermost WebSocket listener
-  startMattermostWebSocket(async (post) => {
+  startMattermostWebSocket((post) => {
     // Build a prompt from the incoming post
     const prompt = formatPostForAgent(post)
     triggerPrompt(prompt)
@@ -49,19 +49,23 @@ function formatPostForAgent(post: {
   user_id: string
   message: string
   root_id: string
+  channel_name?: string
 }): string {
   const isThread = Boolean(post.root_id)
+  const replyId = isThread ? post.root_id : post.id
   return [
     `[INCOMING MATTERMOST MESSAGE]`,
+    `⚠️ REMINDER: Your text output is invisible. You MUST call reply_to_post to send a response.`,
     `Channel ID: ${post.channel_id}`,
+    post.channel_name ? `Channel name: ${post.channel_name}` : '',
     `Post ID: ${post.id}`,
     isThread ? `Thread root ID: ${post.root_id}` : '',
     ``,
     post.message,
     ``,
     `---`,
-    `To reply in a thread: use reply_to_post with channel_name and root_post_id="${isThread ? post.root_id : post.id}"`,
-    `To post to a channel by name: first look up the channel, then use post_to_channel`,
+    `To reply in this thread: call reply_to_post(channel_name="${post.channel_name ?? 'human'}", root_post_id="${replyId}", content="your reply")`,
+    `Do NOT output plain text — call the tool or the human will never see your response.`,
   ].filter((l) => l !== '').join('\n')
 }
 
