@@ -45,7 +45,7 @@ app.post('/internal/notify', async (c) => {
     return c.json({ error: 'Not initialized' }, 503)
   }
 
-  const channel = await getChannelByName(teamId, body.channel_name, adminToken)
+  const channel = await getOrCreateChannel(teamId, body.channel_name, body.channel_name, 'O', adminToken)
   if (!channel) {
     return c.json({ error: `Channel '${body.channel_name}' not found` }, 404)
   }
