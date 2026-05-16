@@ -84,7 +84,8 @@ export const list_reminders: AgentTool<typeof listRemindersParams> = {
     if (!reminders.length) return { content: [{ type: 'text' as const, text: 'No active reminders.' }], details: {} }
     const lines = reminders.map((r) => {
       const when = r.cron ? `cron: ${r.cron}` : r.fire_at ? `at: ${new Date(r.fire_at).toISOString()}` : 'unknown'
-      return `- [${r.id}] ${r.content} → #${r.topic_id} (${when})`
+      const scriptPart = r.script ? `\n  script: ${r.script}` : ''
+      return `- [${r.id}] ${r.content} → #${r.topic_id} (${when})${scriptPart}`
     }).join('\n')
     return { content: [{ type: 'text' as const, text: lines }], details: {} }
   },
