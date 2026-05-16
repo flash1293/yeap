@@ -111,7 +111,7 @@ services:
       PORT: "3000"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET env var is required}"
       DB_PATH: "/data/registry.db"
-      MATTERMOST_URL: "http://mattermost:8065"
+      MATTERMOST_URL: "http://mattermost:8065/chat"
       MATTERMOST_SITE_URL: "${MATTERMOST_SITE_URL:-http://localhost:8065}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
       OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
@@ -149,7 +149,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
       OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
       OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_REMINDER:-service.name=yeap-reminder,deployment.environment=production}"
-      MATTERMOST_URL: "http://mattermost:8065"
+      MATTERMOST_URL: "http://mattermost:8065/chat"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared
