@@ -69,7 +69,8 @@ Please do the following in order:
   return `[YEAP RESTART]
 You have just come back online after a restart as ${botName}.
 
+Handle this silently (do NOT post an announcement to any channel):
 1. Check /skillet/memory.md to restore prior context.
 2. Check your inbox channel for any messages that arrived while you were offline.
-3. Resume any outstanding tasks.`
+3. Resume any outstanding tasks if there are any — otherwise do nothing.`
 }

@@ -81,21 +81,25 @@ export const leave_channel: AgentTool<typeof leaveChannelParams> = {
   },
 }
 
+const DEFAULT_MODEL = process.env['BOT_MODEL'] ?? 'opencode/deepseek-v4-flash-free'
+
 const spawnBotParams = Type.Object({
   name: Type.String({ description: 'Bot name (2-32 chars, alphanumeric/spaces/hyphens)' }),
-  role: Type.String({ description: 'Clear description of what this bot does' }),
-  model: Type.String({ description: 'LLM model string e.g. "anthropic/claude-sonnet-4-5"' }),
+  role: Type.Optional(Type.String({ description: 'What this bot does. Defaults to "a helpful general-purpose assistant".' })),
+  model: Type.Optional(Type.String({ description: `LLM model string. Defaults to ${DEFAULT_MODEL}.` })),
 })
 export const spawn_bot: AgentTool<typeof spawnBotParams> = {
   name: 'spawn_bot',
   label: 'Spawn Bot',
-  description: 'Request the orchestrator to create a new specialist bot. Only call this when the human has explicitly asked for new capability.',
+  description: `Request the orchestrator to create a new specialist bot. Only call this when the human has explicitly asked for new capability. role defaults to "a helpful general-purpose assistant"; model defaults to ${DEFAULT_MODEL}.`,
   parameters: spawnBotParams,
   execute: async (_id, params) => {
+    const role = params.role ?? 'a helpful general-purpose assistant'
+    const model = params.model ?? DEFAULT_MODEL
     const res = await fetch(`${ORCHESTRATOR_URL}/spawn`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requested_by: BOT_NAME, name: params.name, role: params.role, model: params.model }),
+      body: JSON.stringify({ requested_by: BOT_NAME, name: params.name, role, model }),
     })
     if (res.status === 409) return { content: [{ type: 'text' as const, text: `A bot named '${params.name}' already exists.` }], details: {} }
     if (!res.ok) {
