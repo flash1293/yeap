@@ -47,7 +47,7 @@ export async function createAdminUser(
 ): Promise<{ user_id: string; token: string }> {
   const res = await mmFetch('/api/v4/users', {
     method: 'POST',
-    body: JSON.stringify({ email, username, password, email_verified: true }),
+    body: JSON.stringify({ email, username, password }),
   })
   if (!res.ok) {
     const text = await res.text()
