@@ -26,7 +26,7 @@ type MMPostList = {
 // Simple in-process username cache to avoid repeated API calls
 const _userCache = new Map<string, string>()
 
-async function resolveUsername(userId: string): Promise<string> {
+export async function resolveUsername(userId: string): Promise<string> {
   if (_userCache.has(userId)) return _userCache.get(userId)!
   const res = await mmFetch(`/api/v4/users/${userId}`)
   if (!res.ok) return userId

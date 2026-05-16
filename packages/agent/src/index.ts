@@ -6,7 +6,7 @@
 import { startAdminServer } from './admin.js'
 import { registerBot, buildInitialPrompt } from './register.js'
 import { createAgent, triggerPrompt } from './harness.js'
-import { startMattermostWebSocket } from './mattermost.js'
+import { startMattermostWebSocket, resolveUsername } from './mattermost.js'
 import * as tools from './tools/index.js'
 
 const BOT_NAME = process.env['BOT_NAME'] ?? 'UnknownBot'
@@ -28,9 +28,9 @@ async function main(): Promise<void> {
   const { is_new } = await registerBot()
 
   // Start Mattermost WebSocket listener
-  startMattermostWebSocket((post) => {
-    // Build a prompt from the incoming post
-    const prompt = formatPostForAgent(post)
+  startMattermostWebSocket(async (post) => {
+    const username = await resolveUsername(post.user_id)
+    const prompt = formatPostForAgent(post, username)
     triggerPrompt(prompt)
   })
 
@@ -43,28 +43,31 @@ async function main(): Promise<void> {
   console.log(`[agent] ${BOT_NAME} is ready`)
 }
 
-function formatPostForAgent(post: {
-  id: string
-  channel_id: string
-  user_id: string
-  message: string
-  root_id: string
-  channel_name?: string
-}): string {
+function formatPostForAgent(
+  post: {
+    id: string
+    channel_id: string
+    user_id: string
+    message: string
+    root_id: string
+    channel_name?: string
+  },
+  username: string,
+): string {
   const isThread = Boolean(post.root_id)
   const replyId = isThread ? post.root_id : post.id
   return [
     `[INCOMING MATTERMOST MESSAGE]`,
     `⚠️ REMINDER: Your text output is invisible. You MUST call reply_to_post to send a response.`,
-    `Channel ID: ${post.channel_id}`,
-    post.channel_name ? `Channel name: ${post.channel_name}` : '',
+    `Channel: ${post.channel_name ?? post.channel_id}`,
+    `From: @${username}`,
     `Post ID: ${post.id}`,
     isThread ? `Thread root ID: ${post.root_id}` : '',
     ``,
     post.message,
     ``,
     `---`,
-    `To reply in this thread: call reply_to_post(channel_name="${post.channel_name ?? 'human'}", root_post_id="${replyId}", content="your reply")`,
+    `To reply: call reply_to_post(channel_name="${post.channel_name ?? 'human'}", root_post_id="${replyId}", content="your reply")`,
     `Do NOT output plain text — call the tool or the human will never see your response.`,
   ].filter((l) => l !== '').join('\n')
 }
