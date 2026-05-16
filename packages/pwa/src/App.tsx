@@ -6,6 +6,7 @@ import { Setup } from './pages/Setup.js'
 import { Login } from './pages/Login.js'
 import { Bots } from './pages/Bots.js'
 import { Files } from './pages/Files.js'
+import { BotSession } from './pages/BotSession.js'
 
 export function App() {
   const [initialized, setInitialized] = useState<boolean | null>(null)
@@ -63,6 +64,18 @@ export function App() {
               <Navigate to="/login" />
             ) : (
               <Files />
+            )
+          }
+        />
+        <Route
+          path="/bots/:name/session"
+          element={
+            !initialized ? (
+              <Navigate to="/setup" />
+            ) : !token ? (
+              <Navigate to="/login" />
+            ) : (
+              <BotSession />
             )
           }
         />
