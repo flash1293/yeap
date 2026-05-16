@@ -172,7 +172,7 @@ export async function createChannel(
   return (await res.json()) as { id: string }
 }
 
-/** Get a channel by name, or create it if absent. */
+/** Get a channel by name, or create it if absent. Restores soft-deleted channels. */
 export async function getOrCreateChannel(
   teamId: string,
   name: string,
@@ -184,7 +184,14 @@ export async function getOrCreateChannel(
     `/api/v4/teams/${teamId}/channels/name/${encodeURIComponent(name)}`,
     { token: adminToken },
   )
-  if (getRes.ok) return (await getRes.json()) as { id: string }
+  if (getRes.ok) {
+    const channel = (await getRes.json()) as { id: string; delete_at: number }
+    if (channel.delete_at && channel.delete_at > 0) {
+      // Channel is soft-deleted — restore it
+      await mmFetch(`/api/v4/channels/${channel.id}/restore`, { method: 'POST', token: adminToken })
+    }
+    return channel
+  }
   return createChannel(teamId, name, displayName, type, adminToken)
 }
 
