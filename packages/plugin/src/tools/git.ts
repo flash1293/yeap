@@ -1,10 +1,9 @@
 import { tool } from '@opencode-ai/plugin'
 import { simpleGit } from 'simple-git'
-import { WORK_ROOT, buildMessagePath } from '@yeap/shared'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { WORK_ROOT } from '@yeap/shared'
 
 const BOT_NAME = process.env['BOT_NAME'] ?? 'UnknownBot'
+const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] ?? 'http://orchestrator:3000'
 
 function makeGit() {
   return simpleGit(WORK_ROOT).env({
@@ -91,8 +90,13 @@ async function writeConflictMessage(git: ReturnType<typeof simpleGit>, errMsg: s
     `Please reply with a resolution plan.`,
   ].join('\n')
 
-  const msg_path = buildMessagePath('conflicts', BOT_NAME)
-  mkdirSync(msg_path, { recursive: true })
-  writeFileSync(join(msg_path, 'content.txt'), content, 'utf8')
-  writeFileSync(join(msg_path, 'meta.json'), JSON.stringify({ type: 'alert' }), 'utf8')
+  try {
+    await fetch(`${ORCHESTRATOR_URL}/internal/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot_name: BOT_NAME, topic_id: 'conflicts', content }),
+    })
+  } catch {
+    // best effort
+  }
 }

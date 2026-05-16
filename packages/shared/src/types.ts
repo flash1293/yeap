@@ -129,13 +129,6 @@ export type SpawnResponse = {
 
 export type WebhookPayload = Record<string, unknown>
 
-export type PwaSendPayload = {
-  topic_id: string
-  content: string
-  author_name?: string
-  parent_path?: string
-}
-
 export type SubscribePayload = {
   bot_name: string
   topic_id: string

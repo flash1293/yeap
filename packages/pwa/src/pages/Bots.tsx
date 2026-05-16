@@ -123,19 +123,6 @@ export function Bots() {
           gap: 16,
         }}
       >
-        <button
-          onClick={() => window.open('/chat', '_blank', 'noopener')}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            fontSize: 13,
-            padding: 0,
-          }}
-        >
-          Open Mattermost →
-        </button>
         <span style={{ fontWeight: 700, fontSize: 16 }}>Bots</span>
         <button
           onClick={() => navigate('/files')}
@@ -213,43 +200,6 @@ export function Bots() {
                       : bot.role_description}
                   </div>
                 </div>
-                <button
-                  onClick={() => window.open('/chat', '_blank', 'noopener')}
-                  style={{
-                    padding: '6px 14px',
-                    background: 'var(--accent)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
-                >
-                  Ping
-                </button>
-                {bot.host_port && (
-                  <a
-                    href={`http://${window.location.hostname}:${bot.host_port}/`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      padding: '6px 14px',
-                      background: 'var(--bg)',
-                      color: 'var(--text)',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      flexShrink: 0,
-                      textDecoration: 'none',
-                    }}
-                  >
-                    Inspect ↗
-                  </a>
-                )}
                 <button
                   onClick={() => void handleCompact(bot.name)}
                   disabled={compacting[bot.name] || bot.status !== 'online'}

@@ -1,10 +1,9 @@
 /**
- * Filesystem watcher — polls subscribed FSAD topics and delivers new messages
+ * Mattermost watcher — polls subscribed channels and delivers new posts
  * into the bot's standing opencode session so the LLM actually responds.
  */
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { CHAT_ROOT, parseMessageDirName } from '@yeap/shared'
 
 const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] ?? 'http://orchestrator:3000'
 const BOT_NAME = process.env['BOT_NAME'] ?? 'UnknownBot'
@@ -17,24 +16,38 @@ const BOT_MODEL: { providerID: string; modelID: string } | null = (() => {
 })()
 const SKILLET_PATH = process.env['SKILLET_PATH'] ?? '/skillet'
 const SESSION_FILE = join(SKILLET_PATH, 'session.json')
-const SEEN_FILE = join(SKILLET_PATH, '.yeap-seen.json')
+const LAST_SEEN_FILE = join(SKILLET_PATH, '.yeap-mm-last-seen.json')
 const OPENCODE_URL = 'http://localhost:4096'
 const POLL_INTERVAL_MS = 5_000
 
+const MATTERMOST_URL = process.env['MATTERMOST_URL'] ?? 'http://mattermost:8065'
+const MM_TOKEN = process.env['MATTERMOST_TOKEN'] ?? ''
+const MM_USER_ID = process.env['MATTERMOST_USER_ID'] ?? ''
+const MM_TEAM_ID = process.env['MATTERMOST_TEAM_ID'] ?? ''
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type MmPost = {
+  id: string
+  user_id: string
+  channel_id: string
+  message: string
+  root_id: string
+  create_at: number
+}
+
 // ─── Persistence ─────────────────────────────────────────────────────────────
 
-type SeenSet = Record<string, true>
-
-function loadSeen(): SeenSet {
+function loadLastSeen(): Record<string, number> {
   try {
-    return JSON.parse(readFileSync(SEEN_FILE, 'utf8')) as SeenSet
+    return JSON.parse(readFileSync(LAST_SEEN_FILE, 'utf8')) as Record<string, number>
   } catch {
     return {}
   }
 }
 
-function saveSeen(seen: SeenSet): void {
-  writeFileSync(SEEN_FILE, JSON.stringify(seen), 'utf8')
+function saveLastSeen(data: Record<string, number>): void {
+  writeFileSync(LAST_SEEN_FILE, JSON.stringify(data), 'utf8')
 }
 
 function loadSessionId(): string | null {
@@ -46,13 +59,62 @@ function loadSessionId(): string | null {
   }
 }
 
+// ─── Caches ───────────────────────────────────────────────────────────────────
+
+const channelIdCache = new Map<string, string>()
+const usernameCache = new Map<string, string>()
+
+// ─── MM API helpers ───────────────────────────────────────────────────────────
+
+async function mmGet(path: string): Promise<Response> {
+  return fetch(`${MATTERMOST_URL}${path}`, {
+    headers: { Authorization: `Bearer ${MM_TOKEN}` },
+  })
+}
+
+async function getChannelId(topicId: string): Promise<string | null> {
+  if (channelIdCache.has(topicId)) return channelIdCache.get(topicId)!
+  if (!MM_TEAM_ID || !MM_TOKEN) return null
+  try {
+    const res = await mmGet(`/api/v4/teams/${MM_TEAM_ID}/channels/name/${encodeURIComponent(topicId)}`)
+    if (!res.ok) return null
+    const ch = (await res.json()) as { id: string }
+    channelIdCache.set(topicId, ch.id)
+    return ch.id
+  } catch {
+    return null
+  }
+}
+
+async function fetchPostsSince(channelId: string, since: number): Promise<MmPost[]> {
+  try {
+    const res = await mmGet(`/api/v4/channels/${channelId}/posts?since=${since}`)
+    if (!res.ok) return []
+    const data = (await res.json()) as { order: string[]; posts: Record<string, MmPost> }
+    return (data.order ?? []).map((id) => data.posts[id]).filter((p): p is MmPost => Boolean(p))
+  } catch {
+    return []
+  }
+}
+
+async function getUsername(userId: string): Promise<string> {
+  if (usernameCache.has(userId)) return usernameCache.get(userId)!
+  try {
+    const res = await mmGet(`/api/v4/users/${userId}`)
+    if (!res.ok) return userId
+    const user = (await res.json()) as { username: string }
+    usernameCache.set(userId, user.username)
+    return user.username
+  } catch {
+    return userId
+  }
+}
+
 // ─── Orchestrator queries ─────────────────────────────────────────────────────
 
 async function getSubscriptions(): Promise<string[]> {
   try {
-    const res = await fetch(
-      `${ORCHESTRATOR_URL}/registry/bots/${encodeURIComponent(BOT_NAME)}`,
-    )
+    const res = await fetch(`${ORCHESTRATOR_URL}/registry/bots/${encodeURIComponent(BOT_NAME)}`)
     if (!res.ok) return []
     const data = (await res.json()) as { bot?: { subscriptions?: string[] } }
     return data.bot?.subscriptions ?? []
@@ -60,23 +122,6 @@ async function getSubscriptions(): Promise<string[]> {
     return []
   }
 }
-
-/** Return names of other bots also subscribed to a topic (excludes self). */
-async function getTopicCosubscribers(topic_id: string): Promise<string[]> {
-  try {
-    const url = new URL(`${ORCHESTRATOR_URL}/registry/bots`)
-    url.searchParams.set('topic', topic_id)
-    url.searchParams.set('exclude', BOT_NAME)
-    const res = await fetch(url)
-    if (!res.ok) return []
-    const bots = (await res.json()) as Array<{ name: string }>
-    return bots.map((b) => b.name)
-  } catch {
-    return []
-  }
-}
-
-// ─── Message delivery ─────────────────────────────────────────────────────────
 
 async function compactCheck(): Promise<void> {
   try {
@@ -86,8 +131,6 @@ async function compactCheck(): Promise<void> {
   }
 }
 
-/** Called when message delivery fails due to context overflow. Asks the
- * orchestrator to compact (or reset) the session so the bot can recover. */
 async function requestSessionRecovery(): Promise<void> {
   try {
     await fetch(`${ORCHESTRATOR_URL}/spawn/compact/${encodeURIComponent(BOT_NAME)}`, { method: 'POST' })
@@ -95,6 +138,8 @@ async function requestSessionRecovery(): Promise<void> {
     // non-critical
   }
 }
+
+// ─── Session delivery ─────────────────────────────────────────────────────────
 
 function isOverflowError(err: unknown): boolean {
   const msg = String(err).toLowerCase()
@@ -113,86 +158,41 @@ async function deliverToSession(session_id: string, prompt: string): Promise<voi
     body: JSON.stringify(body),
   })
   if (!res.ok && res.status !== 204) {
-    const body = await res.text()
-    throw new Error(`prompt_async failed ${res.status}: ${body}`)
+    const text = await res.text()
+    throw new Error(`prompt_async failed ${res.status}: ${text}`)
   }
 }
 
-function buildPrompt(
-  topic_id: string,
-  msgDir: string,
-  author: string,
-  content: string,
-  msgType: string,
-  otherNotified: string[],
-): string {
-  const topicDir = `${CHAT_ROOT}/${topic_id}`
-  return [
-    `[YEAP INCOMING MESSAGE]`,
-    `Topic: ${topic_id}`,
-    `From: ${author}`,
-    `Type: ${msgType}`,
-    `Message path: ${msgDir}`,
-    `Also notified: ${
-      otherNotified.length > 0 ? otherNotified.join(', ') : '(only you)'
-    }`,
-    ``,
-    content,
-    ``,
-    `---`,
-    `Only act on this message if it requires your direct input or action — do not reply just to acknowledge.`,
-    `If it is addressed directly to you (e.g. in your personal inbox), reply with substance.`,
-    `If it is informational or directed at others, take note but stay silent.`,
-    `Use reply_to_message(parent_path="${msgDir}", content="...") to reply,`,
-    `or write_to_chat(topic_id="...", content="...") to start a new thread.`,
-    ``,
-    `Filesystem context (read surrounding messages without extra API calls):`,
-    `  This message       : cat ${msgDir}/content.txt`,
-    `  All messages (sorted): ls ${topicDir}/ | sort`,
-    `  Replies to this    : ls ${msgDir}/`,
-  ].join('\n')
-}
+// ─── Prompt builder ───────────────────────────────────────────────────────────
 
-function buildReplyPrompt(
-  topic_id: string,
-  replyDir: string,
-  parentDir: string,
-  author: string,
-  content: string,
-  msgType: string,
-  otherNotified: string[],
-): string {
-  const topicDir = `${CHAT_ROOT}/${topic_id}`
+function buildPrompt(topic_id: string, post: MmPost, author: string, isReply: boolean): string {
   return [
-    `[YEAP INCOMING REPLY]`,
+    isReply ? '[YEAP INCOMING REPLY]' : '[YEAP INCOMING MESSAGE]',
     `Topic: ${topic_id}`,
     `From: ${author}`,
-    `Type: ${msgType}`,
-    `Reply path: ${replyDir}`,
-    `In reply to: ${parentDir}`,
-    `Also notified: ${
-      otherNotified.length > 0 ? otherNotified.join(', ') : '(only you)'
-    }`,
-    ``,
-    content,
-    ``,
-    `---`,
-    `Only continue this thread if you have something meaningful to add or are being asked to act.`,
-    `Do not reply just to acknowledge — silence is fine if no action is needed.`,
-    `Use reply_to_message(parent_path="${replyDir}", content="...") to continue this thread,`,
-    `or reply_to_message(parent_path="${parentDir}", content="...") to reply at the original level.`,
-    ``,
-    `Filesystem context (read surrounding messages without extra API calls):`,
-    `  This reply         : cat ${replyDir}/content.txt`,
-    `  Parent message     : cat ${parentDir}/content.txt`,
-    `  All replies        : ls ${parentDir}/`,
-    `  All messages (sorted): ls ${topicDir}/ | sort`,
+    `Post ID: ${post.id}`,
+    `Channel ID: ${post.channel_id}`,
+    ...(isReply ? [`In reply to post: ${post.root_id}`] : []),
+    '',
+    post.message,
+    '',
+    '---',
+    'Only act on this message if it requires your direct input or action — do not reply just to acknowledge.',
+    'If it is addressed directly to you (e.g. in your personal inbox), reply with substance.',
+    'If it is informational or directed at others, take note but stay silent.',
+    `Use reply_to_message(post_id="${post.root_id || post.id}", content="...") to reply in this thread,`,
+    `or write_to_chat(topic_id="...", content="...") to start a new thread.`,
   ].join('\n')
 }
 
 // ─── Main poll loop ───────────────────────────────────────────────────────────
 
 async function poll(): Promise<void> {
+  if (!MM_TOKEN || !MM_USER_ID) {
+    console.log('[yeap-watcher] No MM credentials configured, skipping poll')
+    return
+  }
+
   const session_id = loadSessionId()
   if (!session_id) {
     console.log('[yeap-watcher] No session yet, skipping poll')
@@ -202,154 +202,49 @@ async function poll(): Promise<void> {
   const subscriptions = await getSubscriptions()
   if (!subscriptions.length) return
 
-  // Fetch co-subscribers for each topic once (not per message)
-  const cosubsCache = new Map<string, string[]>()
-  await Promise.all(
-    subscriptions.map(async (topic_id) => {
-      cosubsCache.set(topic_id, await getTopicCosubscribers(topic_id))
-    }),
-  )
-
-  const seen = loadSeen()
+  const lastSeen = loadLastSeen()
+  const now = Date.now()
   let dirty = false
 
-  const pending: Array<{ topic_id: string; msgDir: string; prompt: string }> = []
+  const pending: Array<{ topic_id: string; post: MmPost; author: string; isReply: boolean }> = []
 
   for (const topic_id of subscriptions) {
-    const topicDir = join(CHAT_ROOT, topic_id)
-    if (!existsSync(topicDir)) continue
+    const channelId = await getChannelId(topic_id)
+    if (!channelId) continue
 
-    let entries: string[]
-    try {
-      entries = readdirSync(topicDir).sort() // chronological order
-    } catch {
-      continue
+    const since = lastSeen[channelId] ?? (now - 30_000)
+    const posts = await fetchPostsSince(channelId, since)
+
+    // MM returns newest-first; sort chronologically for delivery order
+    posts.sort((a, b) => a.create_at - b.create_at)
+
+    let maxSeen = since
+    for (const post of posts) {
+      maxSeen = Math.max(maxSeen, post.create_at)
+      if (post.user_id === MM_USER_ID) continue // skip own posts
+      const author = await getUsername(post.user_id)
+      pending.push({ topic_id, post, author, isReply: !!post.root_id })
     }
 
-    for (const entry of entries) {
-      const key = `${topic_id}/${entry}`
-      const msgDir = join(topicDir, entry)
-
-      // Determine whether this entry is a directory (skip plain files)
-      let isDir = false
-      try {
-        isDir = statSync(msgDir).isDirectory()
-      } catch {
-        continue
-      }
-
-      if (!isDir) {
-        if (!seen[key]) { seen[key] = true; dirty = true }
-        continue
-      }
-
-      // ── Process top-level message (only once) ────────────────────────────
-      if (!seen[key]) {
-        seen[key] = true
-        dirty = true
-
-        const parsed = parseMessageDirName(entry)
-        if (parsed && parsed.author_name.toLowerCase() !== BOT_NAME.toLowerCase()) {
-          const contentFile = join(msgDir, 'content.txt')
-          const metaFile = join(msgDir, 'meta.json')
-          if (existsSync(contentFile)) {
-            const content = readFileSync(contentFile, 'utf8').trim()
-            if (content) {
-              let msgType = 'text'
-              try {
-                const meta = JSON.parse(readFileSync(metaFile, 'utf8')) as { type?: string }
-                msgType = meta.type ?? 'text'
-              } catch {
-                // no meta, use default
-              }
-              const cosubsExAuthor = (cosubsCache.get(topic_id) ?? []).filter(
-                (n) => n.toLowerCase() !== parsed.author_name.toLowerCase(),
-              )
-              pending.push({
-                topic_id,
-                msgDir,
-                prompt: buildPrompt(topic_id, msgDir, parsed.author_name, content, msgType, cosubsExAuthor),
-              })
-            }
-          }
-        }
-      }
-
-      // ── Scan for new replies inside this message directory ────────────────
-      // We always check, even for already-seen top-level messages, because
-      // replies can arrive after the parent was first processed.
-      let replyEntries: string[]
-      try {
-        replyEntries = readdirSync(msgDir).sort()
-      } catch {
-        continue
-      }
-
-      for (const replyEntry of replyEntries) {
-        const replyKey = `${topic_id}/${entry}/${replyEntry}`
-        if (seen[replyKey]) continue
-
-        const replyDir = join(msgDir, replyEntry)
-        try {
-          if (!statSync(replyDir).isDirectory()) {
-            seen[replyKey] = true
-            dirty = true
-            continue
-          }
-        } catch {
-          continue
-        }
-
-        seen[replyKey] = true
-        dirty = true
-
-        const parsed = parseMessageDirName(replyEntry)
-        if (!parsed) continue
-        if (parsed.author_name.toLowerCase() === BOT_NAME.toLowerCase()) continue
-
-        const contentFile = join(replyDir, 'content.txt')
-        const metaFile = join(replyDir, 'meta.json')
-        if (!existsSync(contentFile)) continue
-
-        const content = readFileSync(contentFile, 'utf8').trim()
-        if (!content) continue
-
-        let msgType = 'text'
-        try {
-          const meta = JSON.parse(readFileSync(metaFile, 'utf8')) as { type?: string }
-          msgType = meta.type ?? 'text'
-        } catch {
-          // no meta, use default
-        }
-
-        const cosubsExAuthor = (cosubsCache.get(topic_id) ?? []).filter(
-          (n) => n.toLowerCase() !== parsed.author_name.toLowerCase(),
-        )
-        pending.push({
-          topic_id,
-          msgDir: replyDir,
-          prompt: buildReplyPrompt(topic_id, replyDir, msgDir, parsed.author_name, content, msgType, cosubsExAuthor),
-        })
-      }
+    if (posts.length > 0 || !lastSeen[channelId]) {
+      lastSeen[channelId] = maxSeen + 1
+      dirty = true
     }
   }
 
-  if (dirty) saveSeen(seen)
+  if (dirty) saveLastSeen(lastSeen)
 
   // Deliver sequentially — don't flood the session
-  for (const { topic_id, msgDir, prompt } of pending) {
-    console.log(
-      `[yeap-watcher] Delivering message in topic '${topic_id}' (${msgDir.split('/').pop()}) to session ${session_id}`,
-    )
+  for (const { topic_id, post, author, isReply } of pending) {
+    console.log(`[yeap-watcher] Delivering post ${post.id} in #${topic_id} from ${author} to session ${session_id}`)
     try {
-      await deliverToSession(session_id, prompt)
+      await deliverToSession(session_id, buildPrompt(topic_id, post, author, isReply))
       void compactCheck()
-      // Small gap between deliveries
       await new Promise<void>((r) => setTimeout(r, 500))
     } catch (err) {
-      console.error(`[yeap-watcher] Failed to deliver:`, err)
+      console.error('[yeap-watcher] Failed to deliver:', err)
       if (isOverflowError(err)) {
-        console.warn(`[yeap-watcher] Context overflow detected — requesting session recovery`)
+        console.warn('[yeap-watcher] Context overflow — requesting session recovery')
         void requestSessionRecovery()
       }
     }
@@ -357,8 +252,8 @@ async function poll(): Promise<void> {
 }
 
 export function startWatcher(): void {
-  console.log('[yeap-watcher] Starting polling watcher (interval: 5s)')
-  // First poll after initial delay to let session settle
+  console.log('[yeap-watcher] Starting Mattermost polling watcher (interval: 5s)')
   setTimeout(() => void poll(), 8_000)
   setInterval(() => void poll(), POLL_INTERVAL_MS)
 }
+

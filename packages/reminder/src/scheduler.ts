@@ -147,8 +147,10 @@ async function fireReminder(reminder: ReminderRow): Promise<void> {
       }),
     })
     if (!res.ok) {
-      const body = (await res.json()) as { error?: string }
-      console.error(`[scheduler] notify failed for reminder ${reminder.id}: ${body.error ?? res.status}`)
+      const text = await res.text()
+      let errMsg: string
+      try { errMsg = (JSON.parse(text) as { error?: string }).error ?? text } catch { errMsg = text }
+      console.error(`[scheduler] notify failed for reminder ${reminder.id}: ${errMsg}`)
     } else {
       console.log(`[scheduler] Fired reminder ${reminder.id} → #${reminder.topic_id}`)
     }

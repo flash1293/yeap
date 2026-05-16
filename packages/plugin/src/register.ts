@@ -25,7 +25,7 @@ Please do the following in order:
 
 1. Read the platform docs at /shared/yeap-docs/platform.md so you understand how YEAP works.
 2. Check /skillet/memory.md — if it exists, read it to restore any prior context.
-3. Scan /shared/chat/ for recent messages across all topic directories. Look at any topics relevant to your role, the "human" topic, and your own inbox. Read enough to understand what has happened recently and whether anything needs your attention.
+3. Check your Mattermost inbox channel (inbox-${BOT_NAME.toLowerCase().replace(/[^a-z0-9]+/g, '-')}) and any other subscribed channels for recent messages. Use write_to_chat to read/respond.
 4. If there are outstanding requests or tasks addressed to you, begin working on them.
 5. Introduce yourself to the human by writing a brief message to the "human" topic via write_to_chat("human", ...) — mention your name, your role, and that you are now online.`
 

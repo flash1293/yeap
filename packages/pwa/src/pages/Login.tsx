@@ -19,7 +19,7 @@ export function Login() {
     try {
       const { token } = await postLogin({ password })
       setToken(token)
-      await navigate('/chat')
+      await navigate('/bots')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid password')
     } finally {

@@ -3,7 +3,6 @@ import type {
   Bot,
   LoginPayload,
   LoginResponse,
-  PwaSendPayload,
   SetupInitPayload,
   SetupStatus,
 } from '@yeap/shared'
@@ -53,10 +52,6 @@ export async function postLogin(payload: LoginPayload): Promise<LoginResponse> {
 export async function getBots(topic?: string): Promise<Bot[]> {
   const qs = topic ? `?topic=${encodeURIComponent(topic)}` : ''
   return req<Bot[]>(`/registry/bots${qs}`)
-}
-
-export async function sendMessage(payload: PwaSendPayload): Promise<{ path: string }> {
-  return req<{ path: string }>('/pwa/send', { method: 'POST', body: JSON.stringify(payload) })
 }
 
 export async function subscribeBot(bot_name: string, topic_id: string): Promise<void> {

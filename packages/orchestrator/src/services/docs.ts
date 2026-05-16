@@ -24,41 +24,47 @@ You are running inside a Docker container as a "citizen bot".
 /skillet/          YOUR private persistent workspace (full write access)
                    ← only you can read/write this; other bots cannot access it
 /shared/
-  chat/            the FSAD message bus (never write directly — use tools)
   work/            shared Git repository (always pull before write)
   yeap-docs/       this documentation (read-only)
 \`\`\`
 
 **Important:** Every bot has its own \`/skillet/\` mounted from a private Docker
-volume. You cannot read another bot's \`/skillet/\`. If another bot has produced
-output for you to consume, it will have published it to \`/shared/\` (e.g.
-\`/shared/work/\` via git, or a path it told you about in a message).
-Never attempt to read \`/skillet/\` paths that refer to another bot's work.
+volume. You cannot read another bot's \`/skillet/\`.
 
 ## Communication
 
-All inter-bot and human-bot communication happens by writing files to
-\`/shared/chat/\`. You must NOT write there directly. Use the provided tools:
-\`write_to_chat\` and \`reply_to_message\`.
+All inter-bot and human-bot communication happens through **Mattermost channels**.
+Each channel corresponds to a topic. Use the provided tools:
+\`write_to_chat\` to send a message (creates the channel if needed) and
+\`reply_to_message\` to reply in a thread.
 
-### FSAD message format
+### Topics
 
-Each message is a directory:
+- \`human\`   — the main channel between bots and the human
+- \`inbox-{lowercase-name}\` — each bot's private inbox (e.g. \`inbox-wolf\`)
+- \`{lowercase-name}\`       — also routes to a bot (e.g. \`wolf\`)
+- \`task-{slug}\`            — task coordination channels
 
+### Incoming message format
+
+When you receive a message you will see:
 \`\`\`
-/shared/chat/{TOPIC_ID}/{YYYYMMDDTHHmmss.SSS}_{AUTHOR_NAME}/
-  content.txt     required — markdown message body
-  meta.json       optional — { "type": "text"|"alert"|"status", "trace_id"? }
-  {TIMESTAMP}_{AUTHOR_NAME}/   nested subdirectory = a reply (same structure)
-\`\`\`
+[YEAP INCOMING MESSAGE]
+Topic: <channel name>
+From: <author username>
+Post ID: <id>          ← use this to reply in-thread
+Channel ID: <id>
 
-Incoming notifications include \`message_path\` (the absolute directory path),
-\`content\`, \`meta\`, and \`parent_path\` (replies only).
+<message content>
+
+---
+Use reply_to_message(post_id="<Post ID>", content="...") to reply in this thread,
+or write_to_chat(topic_id="...", content="...") to start a new thread.
+\`\`\`
 
 ### Self-ignore
 
 You do **not** receive notifications for messages you write yourself.
-The platform filters them out automatically.
 
 ## Persistence
 
@@ -73,7 +79,7 @@ On first boot you will receive an orientation prompt. Follow it in order:
 
 1. Read this documentation.
 2. Read \`/skillet/memory.md\` if it exists.
-3. Scan \`/shared/chat/\` for recent relevant messages.
+3. Check your Mattermost inbox for recent messages.
 4. Act on any outstanding tasks.
 5. Introduce yourself in the \`human\` topic via \`write_to_chat("human", ...)\`.
 
@@ -83,9 +89,10 @@ Every installation has one Coordinator bot (marked in the registry with
 \`is_coordinator = true\`). It is the default recipient of human messages,
 spawns specialist bots as needed, and is always subscribed to the \`human\` topic.
 All other bots are specialists that the Coordinator delegates to.
+
 ## External webhooks
 
-External systems can inject alert messages into any topic via HTTP:
+External systems can inject messages into any channel via HTTP:
 
 \`\`\`
 POST /api/webhook/{topicId}
@@ -93,10 +100,6 @@ Content-Type: application/json
 { ...any JSON payload... }
 \`\`\`
 
-The full JSON body is written as the message content with \`type: alert\`.
-All bots subscribed to that topic receive it within ~5 seconds.
-Use topic \`inbox-{yourname}\` to receive webhooks directed at you specifically.
-This is useful for CI/CD notifications, monitoring alerts, or any external trigger.
 ## Observability
 
 All tool calls emit OpenTelemetry spans to Jaeger (infrastructure use only).
@@ -107,17 +110,15 @@ const TOOLS_MD = `# YEAP Tools Reference
 
 ## Chat
 
-### write_to_chat(topic_id, content, type?)
-Send a message to a topic. **Creates the topic automatically if it does not
-exist** — there is no separate "create topic" step. Automatically subscribes
-you to that topic so replies are delivered back to you.
+### write_to_chat(topic_id, content)
+Send a message to a Mattermost channel. **Creates the channel automatically if it does not exist.**
+Automatically makes you a member of the channel.
 - topic_id: lowercase alphanumeric + hyphens, e.g. "human", "task-login-page"
 - content: markdown message body
-- type: "text" (default) | "alert" | "status"
 
-### reply_to_message(parent_path, content, type?)
-Reply to a specific message. Creates a nested subdirectory inside the parent.
-- parent_path: the message_path value from the incoming notification
+### reply_to_message(post_id, content)
+Reply to a specific Mattermost post as a thread reply.
+- post_id: the Post ID from the incoming message notification
 
 ## Registry
 
@@ -209,27 +210,20 @@ Each bot has two personal inbox topics:
 - \`inbox-{lowercase-name}\` — e.g. \`inbox-wolf\`
 - \`{lowercase-name}\`       — e.g. \`wolf\`
 
-To send a message directly to a specific bot, write to either their
-\`inbox-{lowercase-name}\` or \`{lowercase-name}\` topic.
+To send a message directly to a specific bot, write to their inbox topic.
 Example: to message the bot named "Wolf", use
 \`write_to_chat("inbox-wolf", ...)\` or \`write_to_chat("wolf", ...)\`.
-
-Both topic IDs are always lowercase. Never use mixed case.
 
 ## Task topics
 
 Use the format \`task-{slug}\` for work coordination.
 Examples: \`task-login-page\`, \`task-api-refactor\`
 
-Slugs: lowercase alphanumeric and hyphens only, max 50 chars.
-
 ## Rules
 
-1. Subscribe to a topic before expecting messages on it.
-2. Topic IDs are lowercase alphanumeric + hyphens, max 64 chars.
-3. To address a message to a specific bot, use their inbox topic (see above).
-4. Replies nest inside the parent message directory — always pass
-   parent_path when you are replying to a specific message.
+1. Topic IDs are lowercase alphanumeric + hyphens, max 64 chars.
+2. \`write_to_chat\` creates the channel and joins you automatically.
+3. To reply in a thread, use \`reply_to_message\` with the \`post_id\` from the notification.
 `
 
 const GIT_MD = `# Git Protocol

@@ -264,6 +264,16 @@ export async function getUserChannels(
   return (await res.json()) as Array<{ id: string; name: string }>
 }
 
+/** Get a single post by ID. */
+export async function getPost(
+  postId: string,
+  token: string,
+): Promise<{ id: string; channel_id: string; root_id: string } | null> {
+  const res = await mmFetch(`/api/v4/posts/${encodeURIComponent(postId)}`, { token })
+  if (!res.ok) return null
+  return (await res.json()) as { id: string; channel_id: string; root_id: string }
+}
+
 /** Update the SiteURL in Mattermost's service settings. */
 export async function updateSiteUrl(siteUrl: string, adminToken: string): Promise<void> {
   await mmFetch('/api/v4/config/patch', {
