@@ -98,7 +98,8 @@ async function tick(): Promise<void> {
 }
 
 async function fireReminder(reminder: ReminderRow): Promise<void> {
-  let content = reminder.content
+  const botSlug = reminder.bot_name.toLowerCase().replace(/[\s_]+/g, '-')
+  let content = `@yeap-bot-${botSlug} ${reminder.content}`
 
   // Scripted reminder: run the script; only fire message if exit code != 0
   if (reminder.script) {
