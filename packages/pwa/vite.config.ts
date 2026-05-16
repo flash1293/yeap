@@ -10,7 +10,7 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       workbox: {
-        navigateFallbackDenylist: [/^\/llmapi/],
+        navigateFallbackDenylist: [/^\/llmapi/, /^\/chat/],
       },
       manifest: {
         name: 'YEAP',
