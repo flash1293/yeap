@@ -255,10 +255,10 @@ export function Files() {
         >
           Files
           <button
-            onClick={() => void navigate('/chat')}
+            onClick={() => void navigate('/bots')}
             style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
           >
-            ← Chat
+            ← Bots
           </button>
         </div>
 

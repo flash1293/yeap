@@ -137,6 +137,20 @@ export function Bots() {
           Open Mattermost →
         </button>
         <span style={{ fontWeight: 700, fontSize: 16 }}>Bots</span>
+        <button
+          onClick={() => navigate('/files')}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            fontSize: 13,
+            padding: 0,
+            marginLeft: 'auto',
+          }}
+        >
+          Files →
+        </button>
       </div>
 
       {/* Content */}

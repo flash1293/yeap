@@ -249,10 +249,13 @@ function MessageCard({ msg, index }: { msg: Message; index: number }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 30
+
 export function BotSession() {
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
   const [messages, setMessages] = useState<Message[]>([])
+  const [offset, setOffset] = useState(0) // how many extra messages to show beyond the last PAGE_SIZE
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(false)
@@ -283,7 +286,8 @@ export function BotSession() {
     return () => clearInterval(id)
   }, [autoRefresh, name]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = messages.filter((msg) => {
+  // Apply filter + search across all messages, then page
+  const allFiltered = messages.filter((msg) => {
     if (filter === 'toolCall') {
       const parts = typeof msg.content === 'string' ? [] : (msg.content as ContentPart[])
       return parts.some((p) => p.type === 'toolCall')
@@ -302,6 +306,9 @@ export function BotSession() {
     const text = parts.map(contentText).join(' ').toLowerCase()
     return text.includes(search.toLowerCase())
   })
+  const visibleCount = PAGE_SIZE + offset
+  const filtered = allFiltered.slice(-visibleCount)
+  const hiddenCount = allFiltered.length - filtered.length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' }}>
@@ -324,7 +331,9 @@ export function BotSession() {
           ← Bots
         </button>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{name} — session</span>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{messages.length} messages</span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {messages.length} total{hiddenCount > 0 ? `, showing last ${filtered.length}` : ''}
+        </span>
 
         {/* Search */}
         <input
@@ -401,8 +410,25 @@ export function BotSession() {
         {!loading && !error && filtered.length === 0 && (
           <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>No messages{search || filter !== 'all' ? ' matching filter' : ''}.</p>
         )}
+        {hiddenCount > 0 && (
+          <button
+            onClick={() => setOffset((v) => v + PAGE_SIZE)}
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: 12,
+              padding: '6px 14px',
+              alignSelf: 'center',
+            }}
+          >
+            ↑ Show {Math.min(PAGE_SIZE, hiddenCount)} earlier ({hiddenCount} hidden)
+          </button>
+        )}
         {filtered.map((msg, i) => (
-          <MessageCard key={i} msg={msg} index={i} />
+          <MessageCard key={allFiltered.length - filtered.length + i} msg={msg} index={allFiltered.length - filtered.length + i} />
         ))}
         <div ref={bottomRef} />
       </div>

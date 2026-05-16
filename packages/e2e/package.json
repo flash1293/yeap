@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --reporter=verbose tests/01-smoke.test.ts tests/02-bot-lifecycle.test.ts tests/03-messaging.test.ts tests/04-reminders.test.ts tests/05-agent-task.test.ts tests/06-coordinator-spawn.test.ts",
+    "test": "vitest run --reporter=verbose tests/01-smoke.test.ts tests/02-bot-lifecycle.test.ts tests/03-messaging.test.ts tests/04-reminders.test.ts tests/05-agent-task.test.ts tests/06-coordinator-spawn.test.ts tests/07-reminders-extended.test.ts tests/08-compaction.test.ts",
     "test:pwa": "playwright test",
     "test:all": "pnpm test && pnpm test:pwa"
   },
