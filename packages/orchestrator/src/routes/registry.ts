@@ -33,11 +33,11 @@ registryRouter.get('/bots/:name', (c) => {
   return c.json({ bot })
 })
 
-// POST /registry/bots  — bot self-registers (called by plugin on startup)
+// POST /registry/bots  — bot self-registers (called by agent on startup)
 registryRouter.post('/bots', async (c) => {
   const body = await c.req.json<RegisterBotPayload>()
-  if (!body.name || !body.opencode_url) {
-    return c.json({ error: 'name and opencode_url are required' }, 400)
+  if (!body.name) {
+    return c.json({ error: 'name is required' }, 400)
   }
 
   const row = db.select().from(bots).where(eq(bots.name, body.name)).get()
@@ -45,7 +45,7 @@ registryRouter.post('/bots', async (c) => {
 
   db.update(bots)
     .set({
-      opencode_url: body.opencode_url,
+      ...(body.opencode_url !== undefined ? { opencode_url: body.opencode_url } : {}),
       role_description: body.role_description || row.role_description,
       status: 'online',
       last_seen: Date.now(),

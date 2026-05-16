@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { buildMessagePath, formatTimestamp, CHAT_ROOT } from '@yeap/shared'
+import { db } from '../db/index.js'
+import { settings } from '../db/schema.js'
+import { eq } from 'drizzle-orm'
+import { postMessage, getChannelByName } from '../services/mattermost.js'
 import type { WebhookPayload } from '@yeap/shared'
 
 export const webhookRouter = new Hono()
@@ -20,14 +21,24 @@ webhookRouter.post('/:topicId', async (c) => {
     // Not JSON — use empty object
   }
 
-  const msg_path = buildMessagePath(topicId, 'Webhook_Alert')
-  mkdirSync(msg_path, { recursive: true })
-  writeFileSync(join(msg_path, 'content.txt'), JSON.stringify(payload, null, 2), 'utf8')
-  writeFileSync(
-    join(msg_path, 'meta.json'),
-    JSON.stringify({ type: 'alert' }),
-    'utf8',
-  )
+  const systemToken = db.select().from(settings).where(eq(settings.key, 'mm_system_token')).get()?.value
+  const teamId = db.select().from(settings).where(eq(settings.key, 'mm_team_id')).get()?.value
+
+  if (!systemToken || !teamId) {
+    return c.json({ error: 'Mattermost not configured — run setup first' }, 503)
+  }
+
+  const channel = await getChannelByName(teamId, topicId, systemToken)
+  if (!channel) {
+    return c.json({ error: `Channel '${topicId}' not found in Mattermost` }, 404)
+  }
+
+  const message = typeof payload['text'] === 'string'
+    ? payload['text']
+    : `**Webhook alert**\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``
+
+  await postMessage(channel.id, message, systemToken)
 
   return new Response(null, { status: 204 })
 })
+

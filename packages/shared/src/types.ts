@@ -16,6 +16,7 @@ export type Bot = {
   subscriptions: string[]
   messages_since_compact: number
   last_compact_at: number | null
+  mattermost_user_id: string | null
 }
 
 export type Subscription = {
@@ -43,34 +44,6 @@ export type MessageMeta = {
   reminder_id?: string
 }
 
-export type FsadMessage = {
-  topic_id: string
-  author_name: string
-  timestamp: string
-  path: string
-  relative_path: string
-  content: string
-  meta: MessageMeta | null
-  replies: FsadMessage[]
-}
-
-// ── FSAD events (SSE) ─────────────────────────────────────────────────────────
-
-export type FsadEventType = 'new_message' | 'new_reply' | 'connected'
-
-export type FsadEvent =
-  | { type: 'connected' }
-  | {
-      type: 'new_message' | 'new_reply'
-      topic_id: string
-      author_name: string
-      timestamp: string
-      message_path: string
-      parent_path?: string
-      content: string
-      meta: MessageMeta | null
-    }
-
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 export type SetupStatus = {
@@ -86,6 +59,10 @@ export type SetupInitPayload = {
   context_window?: number
   max_output?: number
   pwa_password: string
+  /** Mattermost admin account - defaults to admin@yeap.local / yeap-admin / pwa_password */
+  mm_admin_email?: string
+  mm_admin_username?: string
+  mm_admin_password?: string
 }
 
 // ── Reminders ─────────────────────────────────────────────────────────────────
@@ -126,7 +103,7 @@ export type LoginResponse = { token: string }
 export type RegisterBotPayload = {
   name: string
   role_description: string
-  opencode_url: string
+  opencode_url?: string
 }
 export type RegisterBotResponse = { bot: Bot }
 

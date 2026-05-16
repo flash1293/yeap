@@ -2,9 +2,6 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
 import { and, isNotNull, lte, or, eq } from 'drizzle-orm'
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { buildMessagePath } from '@yeap/shared'
 // @ts-ignore — cron-parser has no bundled types in v4
 import cronParser from 'cron-parser'
 
@@ -103,7 +100,7 @@ async function tick(): Promise<void> {
 async function fireReminder(reminder: ReminderRow): Promise<void> {
   let content = reminder.content
 
-  // Scripted reminder: run the script; only write the FSAD message if exit code != 0
+  // Scripted reminder: run the script; only fire message if exit code != 0
   if (reminder.script) {
     let exit_code: number
     let scriptOutput: string
@@ -118,7 +115,7 @@ async function fireReminder(reminder: ReminderRow): Promise<void> {
       )
       if (!res.ok) {
         console.error(`[scheduler] exec endpoint returned ${res.status} for reminder ${reminder.id}`)
-        return // don't fire on exec failure to avoid false positives
+        return
       }
       const result = (await res.json()) as { exit_code: number; stdout: string; stderr: string }
       exit_code = result.exit_code
@@ -133,21 +130,30 @@ async function fireReminder(reminder: ReminderRow): Promise<void> {
       return
     }
 
-    // Script signalled a problem — append output to the message
     if (scriptOutput) {
       content = `${content}\n\n---\nScript output:\n\`\`\`\n${scriptOutput}\n\`\`\``
     }
     console.log(`[scheduler] Scripted reminder ${reminder.id} — script exited non-zero, firing`)
   }
 
-  const author = reminder.author_mode === 'bot' ? reminder.bot_name : 'Reminder'
-  const msg_path = buildMessagePath(reminder.topic_id, author)
-  mkdirSync(msg_path, { recursive: true })
-  writeFileSync(join(msg_path, 'content.txt'), content, 'utf8')
-  writeFileSync(
-    join(msg_path, 'meta.json'),
-    JSON.stringify({ type: reminder.meta_type, reminder_id: reminder.id }),
-    'utf8',
-  )
-  console.log(`[scheduler] Fired reminder ${reminder.id} → ${msg_path}`)
+  // Post to Mattermost via orchestrator's internal notify endpoint
+  try {
+    const res = await fetch(`${ORCHESTRATOR_URL}/internal/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        channel_name: reminder.topic_id,
+        content,
+      }),
+    })
+    if (!res.ok) {
+      const body = (await res.json()) as { error?: string }
+      console.error(`[scheduler] notify failed for reminder ${reminder.id}: ${body.error ?? res.status}`)
+    } else {
+      console.log(`[scheduler] Fired reminder ${reminder.id} → #${reminder.topic_id}`)
+    }
+  } catch (err) {
+    console.error(`[scheduler] Failed to post reminder ${reminder.id}:`, err)
+  }
 }
+

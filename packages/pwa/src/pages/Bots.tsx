@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router'
 import { getBots, subscribeBot, unsubscribeBot, resetBot, compactBot } from '../api/orchestrator.js'
 import { getReminders, deleteReminder } from '../api/reminder.js'
 import { BotAvatar } from '../components/BotAvatar.js'
@@ -11,7 +10,6 @@ function inboxTopic(name: string): string {
 }
 
 export function Bots() {
-  const navigate = useNavigate()
   const [bots, setBots] = useState<Bot[]>([])
   const [loading, setLoading] = useState(true)
   const [addSub, setAddSub] = useState<Record<string, string>>({})
@@ -124,7 +122,7 @@ export function Bots() {
         }}
       >
         <button
-          onClick={() => void navigate('/chat')}
+          onClick={() => window.open('/chat', '_blank', 'noopener')}
           style={{
             background: 'none',
             border: 'none',
@@ -134,7 +132,7 @@ export function Bots() {
             padding: 0,
           }}
         >
-          ← Chat
+          Open Mattermost →
         </button>
         <span style={{ fontWeight: 700, fontSize: 16 }}>Bots</span>
       </div>
@@ -200,7 +198,7 @@ export function Bots() {
                   </div>
                 </div>
                 <button
-                  onClick={() => void navigate(`/chat/${inboxTopic(bot.name)}`)}
+                  onClick={() => window.open('/chat', '_blank', 'noopener')}
                   style={{
                     padding: '6px 14px',
                     background: 'var(--accent)',

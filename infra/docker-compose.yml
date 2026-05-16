@@ -10,7 +10,9 @@ volumes:
     name: yeap-shared
   caddy-data:
   caddy-config:
-  freellmapi-data:
+  postgres-data:
+  mattermost-data:
+  mattermost-config:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Network
@@ -24,26 +26,6 @@ networks:
 # Services
 # ─────────────────────────────────────────────────────────────────────────────
 services:
-
-  # ── FreeLLMAPI (optional OpenAI-compatible free-tier aggregator) ──────────
-  freellmapi:
-    build:
-      context: .
-      dockerfile: freellmapi.Dockerfile
-    image: yeap-freellmapi:latest
-    container_name: yeap-freellmapi
-    ports:
-      - "3002:3001"   # Admin dashboard reachable on host port 3002
-    environment:
-      PORT: "3001"
-      ENCRYPTION_KEY: "${FREELLMAPI_ENCRYPTION_KEY:?FREELLMAPI_ENCRYPTION_KEY env var is required}"
-    volumes:
-      - freellmapi-data:/app/data
-    networks:
-      - yeap-net
-    restart: unless-stopped
-    profiles:
-      - freellmapi
 
   # ── Caddy (TLS termination + reverse proxy) ──────────────────────────────
   caddy:
@@ -66,6 +48,57 @@ services:
     depends_on:
       - pwa
 
+  # ── PostgreSQL (for Mattermost) ───────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: yeap-postgres
+    environment:
+      POSTGRES_DB: mattermost
+      POSTGRES_USER: mattermost
+      POSTGRES_PASSWORD: "${MM_DB_PASSWORD:-mattermost}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - yeap-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mattermost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Mattermost Team Edition ────────────────────────────────────────────────
+  mattermost:
+    image: mattermost/mattermost-team-edition:latest
+    platform: linux/amd64
+    container_name: yeap-mattermost
+    ports:
+      - "8065:8065"
+    volumes:
+      - mattermost-data:/mattermost/data
+      - mattermost-config:/mattermost/config
+    environment:
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: "postgres://mattermost:${MM_DB_PASSWORD:-mattermost}@postgres:5432/mattermost?sslmode=disable"
+      MM_SERVICESETTINGS_SITEURL: "${MATTERMOST_SITE_URL:-http://localhost:8065}"
+      MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION: "true"
+      MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
+      MM_SERVICESETTINGS_ALLOWCORSFROM: "*"
+      MM_EMAILSETTINGS_REQUIREEMAILVERIFICATION: "false"
+      MM_EMAILSETTINGS_ENABLESMTPAUTH: "false"
+      MM_EMAILSETTINGS_SMTPSERVER: ""
+      MM_EMAILSETTINGS_SMTPPORT: "10025"
+      MM_PLUGINSETTINGS_ENABLE: "false"
+      MM_PLUGINSETTINGS_ENABLEUPLOADS: "false"
+      MM_TEAMSETTINGS_ENABLETEAMCREATION: "true"
+      MM_LOGSETTINGS_CONSOLELEVEL: "ERROR"
+    networks:
+      - yeap-net
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # ── Orchestrator ──────────────────────────────────────────────────────────
   orchestrator:
     build:
@@ -78,6 +111,8 @@ services:
       PORT: "3000"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET env var is required}"
       DB_PATH: "/data/registry.db"
+      MATTERMOST_URL: "http://mattermost:8065"
+      MATTERMOST_SITE_URL: "${MATTERMOST_SITE_URL:-http://localhost:8065}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
       OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
       OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_ORCHESTRATOR:-service.name=yeap-orchestrator,deployment.environment=production}"
@@ -89,12 +124,15 @@ services:
     networks:
       - yeap-net
     restart: unless-stopped
+    depends_on:
+      mattermost:
+        condition: service_started
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/setup/status"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 12
+      start_period: 90s
 
   # ── Reminder ──────────────────────────────────────────────────────────────
   reminder:
@@ -111,6 +149,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
       OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
       OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_REMINDER:-service.name=yeap-reminder,deployment.environment=production}"
+      MATTERMOST_URL: "http://mattermost:8065"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared
@@ -125,7 +164,7 @@ services:
   bot:
     build:
       context: ..
-      dockerfile: infra/bot.Dockerfile
+      dockerfile: packages/agent/Dockerfile
     image: yeap-bot:latest
     # This service only exists to produce the yeap-bot:latest image.
     # The orchestrator spawns real bot containers dynamically via the Docker socket.
@@ -147,19 +186,4 @@ services:
       - orchestrator
       - reminder
 
-  # ── nginx-bots (auth proxy in front of each bot's OpenCode port) ───────────
-  nginx-bots:
-    image: nginx:alpine
-    container_name: yeap-nginx-bots
-    # Pre-bind the full port range used for bot OpenCode UIs (up to 64 bots)
-    ports:
-      - "40960-41023:40960-41023"
-    volumes:
-      - ./nginx-bots.conf:/etc/nginx/nginx.conf:ro
-      - yeap-data:/data:ro
-    networks:
-      - yeap-net
-    restart: unless-stopped
-    depends_on:
-      orchestrator:
-        condition: service_healthy
+  # nginx-bots removed: OpenCode replaced by pi-agent-core agent

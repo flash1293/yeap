@@ -6,6 +6,12 @@
         reverse_proxy freellmapi:3001
     }
 
+    # Mattermost chat UI — proxied without path stripping so MM gets /chat/* requests
+    # Mattermost's SiteURL must be set to https://{domain}/chat for this to work.
+    handle /chat* {
+        reverse_proxy mattermost:8065
+    }
+
     handle {
         reverse_proxy pwa:80
     }

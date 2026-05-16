@@ -1,14 +1,32 @@
 import { Hono } from 'hono'
 import { db } from '../db/index.js'
-import { bots, subscriptions, spawn_log } from '../db/schema.js'
+import { bots, subscriptions, spawn_log, settings } from '../db/schema.js'
 import { eq } from 'drizzle-orm'
 import { v4 as uuid } from 'uuid'
 import { generateBotIcon } from '@yeap/shared'
-import { createAndStartBotContainer, createAndStartCoordinatorContainer, allocateHostPort, stopAndRemoveBotContainer, deleteNginxBotConfig, reloadNginxBots, execInBotContainer } from '../services/docker.js'
+import {
+  createAndStartBotContainer,
+  createAndStartCoordinatorContainer,
+  stopAndRemoveBotContainer,
+  execInBotContainer,
+  agentAdminUrl,
+} from '../services/docker.js'
+import {
+  createBotUser,
+  disableBotUser,
+  getOrCreateChannel,
+  addChannelMember,
+} from '../services/mattermost.js'
 import { getBotByName } from '../db/helpers.js'
 import type { SpawnPayload } from '@yeap/shared'
 
 export const spawnRouter = new Hono()
+
+function getSettingOrThrow(key: string): string {
+  const row = db.select().from(settings).where(eq(settings.key, key)).get()
+  if (!row) throw new Error(`Setting '${key}' not configured — is setup complete?`)
+  return row.value
+}
 
 spawnRouter.post('/', async (c) => {
   const body = await c.req.json<SpawnPayload>()
@@ -27,7 +45,6 @@ spawnRouter.post('/', async (c) => {
   const bot_id = uuid()
   const svg_icon = generateBotIcon(body.name)
 
-  // Pre-insert so the bot can self-register when it starts up
   db.insert(bots)
     .values({
       id: bot_id,
@@ -39,16 +56,13 @@ spawnRouter.post('/', async (c) => {
     })
     .run()
 
-  // Auto-subscribe bot to their personal inbox topic
   const inbox_topic = `inbox-${body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 57)}`
   db.insert(subscriptions).values({ bot_id, topic_id: inbox_topic }).onConflictDoNothing().run()
-  // Also subscribe to their lowercase name so bots can address them directly
   const name_topic = body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64)
   if (name_topic !== inbox_topic) {
     db.insert(subscriptions).values({ bot_id, topic_id: name_topic }).onConflictDoNothing().run()
   }
 
-  // Log the spawn
   const log_id = uuid()
   db.insert(spawn_log)
     .values({
@@ -61,24 +75,67 @@ spawnRouter.post('/', async (c) => {
     })
     .run()
 
-  let container_id: string
-  const hostPort = allocateHostPort()
+  // ── Create Mattermost bot identity ────────────────────────────────────────
+  let mmToken: string
+  let mmUserId: string
   try {
-    container_id = await createAndStartBotContainer(body.name, body.role, hostPort)
+    const adminToken = getSettingOrThrow('mm_admin_token')
+    const teamId = getSettingOrThrow('mm_team_id')
+    const humanChannelId = getSettingOrThrow('mm_human_channel_id')
+    const slug = body.name.toLowerCase().replace(/[\s_]+/g, '-')
+
+    const mmBot = await createBotUser(
+      `yeap-bot-${slug}`,
+      body.name,
+      body.role.slice(0, 128),
+      adminToken,
+      teamId,
+    )
+    mmToken = mmBot.token
+    mmUserId = mmBot.user_id
+
+    // Add to human channel so the bot can see the human channel
+    await addChannelMember(humanChannelId, mmUserId, adminToken)
+
+    // Create inbox channel and add bot
+    const inboxChannel = await getOrCreateChannel(
+      teamId,
+      inbox_topic,
+      `Inbox - ${body.name}`,
+      'P',
+      adminToken,
+    )
+    await addChannelMember(inboxChannel.id, mmUserId, adminToken)
+
+    db.update(bots)
+      .set({
+        mattermost_user_id: mmUserId,
+        mattermost_token: mmToken,
+        opencode_url: agentAdminUrl(body.name),
+      })
+      .where(eq(bots.id, bot_id))
+      .run()
   } catch (err) {
-    // Clean up the pre-inserted bot row on container failure
+    db.delete(bots).where(eq(bots.id, bot_id)).run()
+    console.error('Failed to create Mattermost bot:', err)
+    return c.json({ error: `Failed to create Mattermost bot: ${String(err)}` }, 500)
+  }
+
+  // ── Start container ───────────────────────────────────────────────────────
+  let container_id: string
+  try {
+    const teamId = db.select().from(settings).where(eq(settings.key, 'mm_team_id')).get()?.value
+    container_id = await createAndStartBotContainer(body.name, body.role, mmToken!, mmUserId!, teamId)
+  } catch (err) {
     db.delete(bots).where(eq(bots.id, bot_id)).run()
     console.error('Failed to start bot container:', err)
     return c.json({ error: 'Failed to start bot container. Check Docker.' }, 500)
   }
 
-  db.update(bots).set({ host_port: hostPort }).where(eq(bots.id, bot_id)).run()
-
-  // Update spawn log with container id
   db.update(spawn_log).set({ container_id }).where(eq(spawn_log.id, log_id)).run()
 
   const bot = getBotByName(body.name)!
-  return c.json({ container_id, bot })
+  return c.json({ container_id, bot }, 201)
 })
 
 spawnRouter.delete('/:name', async (c) => {
@@ -94,32 +151,38 @@ spawnRouter.delete('/:name', async (c) => {
     return c.json({ error: 'Failed to stop container. Check Docker.' }, 500)
   }
 
-  if (bot.host_port !== null) {
-    deleteNginxBotConfig(bot.host_port)
-    await reloadNginxBots()
+  // Disable Mattermost bot user
+  if (bot.mattermost_user_id) {
+    try {
+      const adminToken = db.select().from(settings).where(eq(settings.key, 'mm_admin_token')).get()?.value
+      if (adminToken) await disableBotUser(bot.mattermost_user_id, adminToken)
+    } catch (err) {
+      console.warn('[teardown] Failed to disable MM bot:', err)
+    }
   }
 
-  // Remove bot and cascades (subscriptions) from DB
   db.delete(bots).where(eq(bots.id, bot.id)).run()
-
   return c.json({ ok: true, name })
 })
 
-// Shared reset logic used by the reset endpoint and the compact overflow fallback
-async function resetBot(name: string, bot: typeof import('../db/schema.js').bots.$inferSelect): Promise<string> {
+async function resetBot(
+  name: string,
+  bot: typeof import('../db/schema.js').bots.$inferSelect,
+): Promise<string> {
   await stopAndRemoveBotContainer(name)
-  const hostPort = bot.host_port ?? allocateHostPort()
+  const mmToken = bot.mattermost_token ?? ''
+  const mmUserId = bot.mattermost_user_id ?? ''
+  const teamId = db.select().from(settings).where(eq(settings.key, 'mm_team_id')).get()?.value
   const container_id = bot.is_coordinator
-    ? await createAndStartCoordinatorContainer(name, hostPort)
-    : await createAndStartBotContainer(name, bot.role_description, hostPort)
+    ? await createAndStartCoordinatorContainer(name, mmToken, mmUserId, teamId)
+    : await createAndStartBotContainer(name, bot.role_description, mmToken, mmUserId, teamId)
   db.update(bots)
-    .set({ status: 'offline', host_port: hostPort, session_id: null, last_seen: null, messages_since_compact: 0 })
+    .set({ status: 'offline', session_id: null, last_seen: null, messages_since_compact: 0 })
     .where(eq(bots.name, name))
     .run()
   return container_id
 }
 
-// POST /spawn/reset/:name — recreate the container (keep volumes/memory, clear session leak cruft)
 spawnRouter.post('/reset/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
@@ -136,29 +199,21 @@ spawnRouter.post('/reset/:name', async (c) => {
   return c.json({ ok: true, container_id })
 })
 
-// POST /spawn/compact/:name — send /compact to the bot's standing session
-// If the session is too large to compact, falls back to a full container reset.
+// POST /spawn/compact/:name — trigger compaction on the agent admin server
 spawnRouter.post('/compact/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
   if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
-  if (!bot.opencode_url || !bot.session_id) {
-    return c.json({ error: 'Bot is not online or has no session' }, 409)
+  if (!bot.opencode_url) {
+    return c.json({ error: 'Bot has no admin URL — is it online?' }, 409)
   }
 
-  const endpoint = `${bot.opencode_url}/session/${bot.session_id}/compact`
   try {
-    const res = await fetch(endpoint, { method: 'POST' })
+    const res = await fetch(`${bot.opencode_url}/compact`, { method: 'POST' })
     if (!res.ok) {
       const txt = await res.text()
-      console.error(`[compact] OpenCode returned ${res.status}: ${txt}`)
-      if (txt.includes('context') || txt.includes('limit') || txt.includes('large') || txt.includes('too large')) {
-        console.warn(`[compact] Context overflow detected for ${name} — clearing session and resetting`)
-        try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* best-effort */ }
-        await resetBot(name, bot)
-        return c.json({ ok: true, reset: true })
-      }
-      return c.json({ error: `OpenCode responded ${res.status}` }, 502)
+      console.error(`[compact] Agent returned ${res.status}: ${txt}`)
+      return c.json({ error: `Agent responded ${res.status}` }, 502)
     }
   } catch (err) {
     console.error('[compact] Fetch failed:', err)
@@ -173,42 +228,25 @@ spawnRouter.post('/compact/:name', async (c) => {
   return c.json({ ok: true })
 })
 
-// POST /spawn/compact-check/:name — called after each message delivery
-// Increments the counter and triggers /compact when threshold is reached.
-// If compact fails due to context overflow, falls back to a container reset.
 const AUTO_COMPACT_THRESHOLD = 10
 
 spawnRouter.post('/compact-check/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
-  if (!bot) return c.json({ ok: true }) // silently ignore unknown bots
+  if (!bot) return c.json({ ok: true })
 
   const newCount = (bot.messages_since_compact ?? 0) + 1
-  db.update(bots)
-    .set({ messages_since_compact: newCount })
-    .where(eq(bots.name, name))
-    .run()
+  db.update(bots).set({ messages_since_compact: newCount }).where(eq(bots.name, name)).run()
 
-  if (newCount >= AUTO_COMPACT_THRESHOLD && bot.opencode_url && bot.session_id) {
+  if (newCount >= AUTO_COMPACT_THRESHOLD && bot.opencode_url) {
     console.log(`[compact-check] Auto-compacting ${name} at ${newCount} messages`)
-    const endpoint = `${bot.opencode_url}/session/${bot.session_id}/compact`
     try {
-      const res = await fetch(endpoint, { method: 'POST' })
+      const res = await fetch(`${bot.opencode_url}/compact`, { method: 'POST' })
       if (res.ok) {
         db.update(bots)
           .set({ messages_since_compact: 0, last_compact_at: Date.now() })
           .where(eq(bots.name, name))
           .run()
-      } else {
-        const txt = await res.text()
-        console.warn(`[compact-check] Compact failed for ${name} (${res.status}): ${txt}`)
-        if (txt.includes('context') || txt.includes('limit') || txt.includes('large')) {
-          console.warn(`[compact-check] Context overflow detected for ${name} — clearing session and resetting`)
-          // Delete session.json before reset so the entrypoint creates a fresh session
-          // rather than reconnecting to the same oversized one from the volume.
-          try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* best-effort */ }
-          await resetBot(name, bot)
-        }
       }
     } catch (err) {
       console.error(`[compact-check] Failed to auto-compact ${name}:`, err)
@@ -218,17 +256,14 @@ spawnRouter.post('/compact-check/:name', async (c) => {
   return c.json({ ok: true })
 })
 
-// POST /spawn/clear-session/:name — delete the standing session file and recreate the container.
-// The plugin will create a brand-new OpenCode session on startup, including the initial
-// orientation prompt. Unlike /reset, this guarantees no stale session history is reused.
 spawnRouter.post('/clear-session/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
   if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
 
-  // Best-effort: remove the session file while the container is still running.
-  // If the container is already stopped this will fail silently — that's fine.
-  try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* already gone */ }
+  try {
+    await execInBotContainer(name, 'rm -f /skillet/session.jsonl', 5000)
+  } catch { /* already gone */ }
 
   let container_id: string
   try {
@@ -241,7 +276,6 @@ spawnRouter.post('/clear-session/:name', async (c) => {
   return c.json({ ok: true, container_id })
 })
 
-// POST /spawn/exec/:name — run a shell script inside the bot's container
 spawnRouter.post('/exec/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
@@ -263,3 +297,4 @@ spawnRouter.post('/exec/:name', async (c) => {
     return c.json({ error: String(err) }, 502)
   }
 })
+

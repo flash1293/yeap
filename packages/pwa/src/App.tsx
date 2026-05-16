@@ -4,7 +4,6 @@ import { getSetupStatus } from './api/orchestrator.js'
 import { useAuthStore } from './store/auth.js'
 import { Setup } from './pages/Setup.js'
 import { Login } from './pages/Login.js'
-import { Chat } from './pages/Chat.js'
 import { Bots } from './pages/Bots.js'
 import { Files } from './pages/Files.js'
 
@@ -37,21 +36,9 @@ export function App() {
             !initialized ? (
               <Navigate to="/setup" />
             ) : token ? (
-              <Navigate to="/chat" />
+              <Navigate to="/bots" />
             ) : (
               <Login />
-            )
-          }
-        />
-        <Route
-          path="/chat/*"
-          element={
-            !initialized ? (
-              <Navigate to="/setup" />
-            ) : !token ? (
-              <Navigate to="/login" />
-            ) : (
-              <Chat />
             )
           }
         />
@@ -79,7 +66,7 @@ export function App() {
             )
           }
         />
-        <Route path="*" element={<Navigate to={initialized ? (token ? '/chat' : '/login') : '/setup'} />} />
+        <Route path="*" element={<Navigate to={initialized ? (token ? '/bots' : '/login') : '/setup'} />} />
       </Routes>
     </BrowserRouter>
   )

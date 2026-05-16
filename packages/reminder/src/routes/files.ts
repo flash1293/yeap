@@ -2,7 +2,18 @@ import { Hono } from 'hono'
 import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { SHARED_ROOT, CHAT_ROOT, DOCS_ROOT, parseMessageDirName } from '@yeap/shared'
-import type { FileNode, FsadMessage, MessageMeta } from '@yeap/shared'
+import type { FileNode, MessageMeta } from '@yeap/shared'
+
+type FsadMessage = {
+  topic_id: string
+  author_name: string
+  timestamp: string
+  path: string
+  relative_path: string
+  content: string
+  meta: MessageMeta | null
+  replies: FsadMessage[]
+}
 
 export const filesRouter = new Hono()
 
