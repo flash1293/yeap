@@ -6,7 +6,7 @@ import { v4 as uuid } from 'uuid'
 import { generateBotIcon } from '@yeap/shared'
 import { createAndStartBotContainer, createAndStartCoordinatorContainer, stopAndRemoveBotContainer, execInBotContainer } from '../services/docker.js'
 import { getBotByName } from '../db/helpers.js'
-import { createBotUser, getOrCreateChannel, addChannelMember } from '../services/mattermost.js'
+import { createBotUser, getOrCreateChannel, addChannelMember, disableBotUser } from '../services/mattermost.js'
 import type { SpawnPayload } from '@yeap/shared'
 
 export const spawnRouter = new Hono()
@@ -109,7 +109,7 @@ spawnRouter.post('/', async (c) => {
   db.update(spawn_log).set({ container_id }).where(eq(spawn_log.id, log_id)).run()
 
   const bot = getBotByName(body.name)!
-  return c.json({ container_id, bot })
+  return c.json({ container_id, bot }, 201)
 })
 
 spawnRouter.delete('/:name', async (c) => {
@@ -123,6 +123,18 @@ spawnRouter.delete('/:name', async (c) => {
   } catch (err) {
     console.error('Failed to stop/remove bot container:', err)
     return c.json({ error: 'Failed to stop container. Check Docker.' }, 500)
+  }
+
+  // Disable Mattermost bot account if it has one
+  if (bot.mattermost_user_id) {
+    const adminToken = db.select().from(settings).where(eq(settings.key, 'mm_admin_token')).get()?.value
+    if (adminToken) {
+      try {
+        await disableBotUser(bot.mattermost_user_id, adminToken)
+      } catch (err) {
+        console.error('[teardown] Failed to disable MM user:', err)
+      }
+    }
   }
 
   // Remove bot and cascades (subscriptions) from DB
@@ -170,23 +182,17 @@ spawnRouter.post('/compact/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
   if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
-  if (!bot.opencode_url || !bot.session_id) {
-    return c.json({ error: 'Bot is not online or has no session' }, 409)
+  if (!bot.opencode_url) {
+    return c.json({ error: 'Bot is not online' }, 409)
   }
 
-  const endpoint = `${bot.opencode_url}/session/${bot.session_id}/compact`
+  const endpoint = `${bot.opencode_url}/compact`
   try {
     const res = await fetch(endpoint, { method: 'POST' })
     if (!res.ok) {
       const txt = await res.text()
-      console.error(`[compact] OpenCode returned ${res.status}: ${txt}`)
-      if (txt.includes('context') || txt.includes('limit') || txt.includes('large') || txt.includes('too large')) {
-        console.warn(`[compact] Context overflow detected for ${name} — clearing session and resetting`)
-        try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* best-effort */ }
-        await resetBot(name, bot)
-        return c.json({ ok: true, reset: true })
-      }
-      return c.json({ error: `OpenCode responded ${res.status}` }, 502)
+      console.error(`[compact] Agent returned ${res.status}: ${txt}`)
+      return c.json({ error: `Agent responded ${res.status}` }, 502)
     }
   } catch (err) {
     console.error('[compact] Fetch failed:', err)
@@ -217,9 +223,9 @@ spawnRouter.post('/compact-check/:name', async (c) => {
     .where(eq(bots.name, name))
     .run()
 
-  if (newCount >= AUTO_COMPACT_THRESHOLD && bot.opencode_url && bot.session_id) {
+  if (newCount >= AUTO_COMPACT_THRESHOLD && bot.opencode_url) {
     console.log(`[compact-check] Auto-compacting ${name} at ${newCount} messages`)
-    const endpoint = `${bot.opencode_url}/session/${bot.session_id}/compact`
+    const endpoint = `${bot.opencode_url}/compact`
     try {
       const res = await fetch(endpoint, { method: 'POST' })
       if (res.ok) {
@@ -230,13 +236,6 @@ spawnRouter.post('/compact-check/:name', async (c) => {
       } else {
         const txt = await res.text()
         console.warn(`[compact-check] Compact failed for ${name} (${res.status}): ${txt}`)
-        if (txt.includes('context') || txt.includes('limit') || txt.includes('large')) {
-          console.warn(`[compact-check] Context overflow detected for ${name} — clearing session and resetting`)
-          // Delete session.json before reset so the entrypoint creates a fresh session
-          // rather than reconnecting to the same oversized one from the volume.
-          try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* best-effort */ }
-          await resetBot(name, bot)
-        }
       }
     } catch (err) {
       console.error(`[compact-check] Failed to auto-compact ${name}:`, err)

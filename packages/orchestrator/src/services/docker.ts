@@ -13,6 +13,7 @@ const OTEL_HEADERS = process.env['OTEL_EXPORTER_OTLP_HEADERS'] ?? ''
 const BOT_MEMORY_MB = parseInt(process.env['BOT_MEMORY_MB'] ?? '600', 10)
 const BOT_MEMORY_BYTES = BOT_MEMORY_MB * 1024 * 1024
 const MATTERMOST_URL = process.env['MATTERMOST_URL'] ?? 'http://mattermost:8065'
+const TAVILY_API_KEY = process.env['TAVILY_API_KEY'] ?? ''
 
 export const docker = new Docker({ socketPath: DOCKER_SOCKET })
 
@@ -83,6 +84,7 @@ export async function createAndStartBotContainer(
       `OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_ENDPOINT}`,
       `OTEL_EXPORTER_OTLP_HEADERS=${OTEL_HEADERS}`,
       `OTEL_RESOURCE_ATTRIBUTES=service.name=yeap-bot-${slug},deployment.environment=production`,
+      ...(TAVILY_API_KEY ? [`TAVILY_API_KEY=${TAVILY_API_KEY}`] : []),
       ...buildBotEnvFromSecrets(),
     ],
     HostConfig: {
@@ -135,6 +137,7 @@ export async function createAndStartCoordinatorContainer(
       `OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_ENDPOINT}`,
       `OTEL_EXPORTER_OTLP_HEADERS=${OTEL_HEADERS}`,
       `OTEL_RESOURCE_ATTRIBUTES=service.name=yeap-bot-${slug},deployment.environment=production`,
+      ...(TAVILY_API_KEY ? [`TAVILY_API_KEY=${TAVILY_API_KEY}`] : []),
       ...buildBotEnvFromSecrets(),
     ],
     HostConfig: {

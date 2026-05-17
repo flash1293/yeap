@@ -9,6 +9,9 @@ const SKILLET = process.env['SKILLET_PATH'] ?? '/skillet'
 const SESSION_FILE = join(SKILLET, 'session.jsonl')
 const AGENTS_FILE = join(SKILLET, 'AGENTS.md')
 
+const ORCHESTRATOR_URL = process.env['ORCHESTRATOR_URL'] ?? 'http://orchestrator:3000'
+const BOT_NAME = process.env['BOT_NAME'] ?? 'UnknownBot'
+
 // ── Model resolution ──────────────────────────────────────────────────────────
 
 type ModelConfig = {
@@ -161,6 +164,9 @@ export async function createAgent(tools: any[]): Promise<any> {
         console.log('[agent] run complete, messages:', agent.state?.messages?.length ?? 0)
       }
       saveSession(agent.state?.messages ?? [])
+      // Notify orchestrator so it can track compaction pressure
+      fetch(`${ORCHESTRATOR_URL}/spawn/compact-check/${encodeURIComponent(BOT_NAME)}`, { method: 'POST' })
+        .catch(() => { /* best-effort */ })
     }
   })
 

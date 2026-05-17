@@ -16,3 +16,4 @@ export {
   set_scripted_reminder,
 } from './reminders.js'
 export { bash, read_file, write_file, edit_file } from './filesystem.js'
+export { web_search } from './search.js'

@@ -26,8 +26,8 @@ describe('Compaction', () => {
     const res = await orchFetch(`/spawn/compact/${encodeURIComponent(COORDINATOR_BOT)}`, {
       method: 'POST',
     })
-    expect(res.status, `Expected 200, got ${res.status}: ${await res.text()}`).toBe(200)
-    const body = (await res.json()) as { ok: boolean }
+    const body = (await res.json()) as { ok: boolean; error?: string }
+    expect(res.status, `Expected 200, got ${res.status}: ${body.error ?? JSON.stringify(body)}`).toBe(200)
     expect(body.ok).toBe(true)
   })
 

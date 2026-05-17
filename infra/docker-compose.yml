@@ -111,12 +111,13 @@ services:
       PORT: "3000"
       JWT_SECRET: "${JWT_SECRET:?JWT_SECRET env var is required}"
       DB_PATH: "/data/registry.db"
-      MATTERMOST_URL: "http://mattermost:8065/chat"
+      MATTERMOST_URL: "${MATTERMOST_INTERNAL_URL:-http://mattermost:8065/chat}"
       MATTERMOST_SITE_URL: "${MATTERMOST_SITE_URL:-http://localhost:8065}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
       OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
       OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_ORCHESTRATOR:-service.name=yeap-orchestrator,deployment.environment=production}"
       BOT_MEMORY_MB: "${BOT_MEMORY_MB:-600}"
+      TAVILY_API_KEY: "${TAVILY_API_KEY:-}"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared
@@ -149,7 +150,7 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-}"
       OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
       OTEL_RESOURCE_ATTRIBUTES: "${OTEL_RESOURCE_ATTRIBUTES_REMINDER:-service.name=yeap-reminder,deployment.environment=production}"
-      MATTERMOST_URL: "http://mattermost:8065/chat"
+      MATTERMOST_URL: "${MATTERMOST_INTERNAL_URL:-http://mattermost:8065/chat}"
     volumes:
       - yeap-data:/data
       - yeap-shared:/shared
