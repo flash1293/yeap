@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
-import { listVirtualFiles, readVirtualFile } from '../api/orchestrator.js'
+import { listVirtualFiles, readVirtualFile, sendDashboardMessage } from '../api/orchestrator.js'
 import type { FileEntry } from '../api/orchestrator.js'
 import { useStarsStore } from '../store/stars.js'
 
@@ -98,6 +98,18 @@ export function Files() {
     }
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Relay postMessage from sandboxed dashboard iframes to the bot's inbox
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (!event.data || event.data.type !== 'yeap-message') return
+      const { bot, message } = event.data as { bot?: unknown; message?: unknown }
+      if (typeof bot !== 'string' || typeof message !== 'string') return
+      sendDashboardMessage(bot, message).catch(() => {})
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
   }, [])
 
   async function handleDirClick(path: string) {

@@ -10,6 +10,7 @@ import { webhookRouter } from './routes/webhook.js'
 import { pwaRouter } from './routes/pwa.js'
 import { botProxyRouter } from './routes/botproxy.js'
 import { filesRouter } from './routes/files.js'
+import { dashRouter } from './routes/dash.js'
 import { db } from './db/index.js'
 import { settings, bots, subscriptions } from './db/schema.js'
 import { eq } from 'drizzle-orm'
@@ -29,6 +30,7 @@ app.route('/spawn', spawnRouter)
 app.route('/api/webhook', webhookRouter)
 app.route('/pwa', pwaRouter)
 app.route('/pwa/files', filesRouter)
+app.route('/dash', dashRouter)
 app.route('/bots', botProxyRouter)
 
 // Internal endpoint used by the reminder service to post MM messages.

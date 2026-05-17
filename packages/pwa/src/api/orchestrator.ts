@@ -79,6 +79,13 @@ export async function readVirtualFile(path: string): Promise<string> {
   return data.content ?? ''
 }
 
+export async function sendDashboardMessage(botName: string, message: string): Promise<void> {
+  await req<{ ok: boolean }>(`/dash/${encodeURIComponent(botName)}/message`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  })
+}
+
 export async function resetBot(name: string): Promise<void> {
   await req<{ ok: boolean }>(`/spawn/reset/${encodeURIComponent(name)}`, { method: 'POST' })
 }

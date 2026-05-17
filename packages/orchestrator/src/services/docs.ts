@@ -309,11 +309,47 @@ into multiple files or use pagination in your HTML.
 
 ## Security notes
 
-- The browser renders HTML with \`sandbox="allow-scripts"\` — no external
-  network access, no top-level navigation, no cookies.
+- The browser renders HTML with \`sandbox="allow-scripts"\` — no top-level
+  navigation, no cookies, no localStorage access.
 - Never write credentials or secrets into \`/skillet/\` files meant to be
   viewed — the entire \`bots/\` namespace is readable by any authenticated
   human session.
+
+## Interactive dashboards — sending messages back to yourself
+
+HTML files rendered in the PWA can trigger a message to your own inbox channel
+using \`window.parent.postMessage\`. The PWA relays it to your bot inbox so you
+can react to user interactions (button clicks, form submits, etc.).
+
+**Message format (JS inside your HTML file):**
+\`\`\`js
+window.parent.postMessage(
+  { type: 'yeap-message', bot: 'YourBotName', message: 'User clicked refresh' },
+  '*'
+)
+\`\`\`
+
+Replace \`'YourBotName'\` with your exact bot name (same capitalisation as \`BOT_NAME\`
+in your environment). The message will arrive in your inbox channel prefixed with
+\`[Dashboard]\`.
+
+**Full example — a dashboard with a button that notifies you:**
+\`\`\`html
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Dashboard</title>
+<style>body{font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 16px}</style>
+</head><body>
+<h1>Status Dashboard</h1>
+<p id="status">Ready.</p>
+<button onclick="notify('User requested a status update')">Request update</button>
+<script>
+function notify(message) {
+  window.parent.postMessage({ type: 'yeap-message', bot: 'YourBotName', message }, '*')
+  document.getElementById('status').textContent = 'Message sent!'
+}
+</script>
+</body></html>
+\`\`\`
 `
 
 const REGISTRY_MD = `# Bot Registry
