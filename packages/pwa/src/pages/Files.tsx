@@ -252,26 +252,22 @@ export function Files() {
             : {}),
         }}
       >
-        {/* Sidebar header */}
+        {/* Bots nav link */}
         <div
+          onClick={() => void navigate('/bots')}
           style={{
-            padding: '12px 16px',
-            fontWeight: 700,
-            fontSize: 16,
+            padding: '10px 14px',
             borderBottom: '1px solid var(--border)',
             display: 'flex',
-            justifyContent: 'space-between',
             alignItems: 'center',
+            gap: 8,
+            cursor: 'pointer',
             flexShrink: 0,
+            userSelect: 'none',
           }}
         >
-          Files
-          <button
-            onClick={() => void navigate('/bots')}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12 }}
-          >
-            ← Bots
-          </button>
+          <span style={{ fontSize: 15 }}>🤖</span>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>Bots</span>
         </div>
 
         {/* Starred section */}
@@ -317,6 +313,9 @@ export function Files() {
 
         {/* Tree */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 4px' }}>
+          <div style={{ padding: '6px 12px 4px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Files
+          </div>
           {loadingDirs.has('') ? (
             <p style={{ color: 'var(--text-muted)', fontSize: 12, padding: '4px 12px' }}>Loading…</p>
           ) : (
