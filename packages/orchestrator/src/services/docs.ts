@@ -100,6 +100,35 @@ Content-Type: application/json
 { ...any JSON payload... }
 \`\`\`
 
+## Interactive HTML dashboards
+
+You can write \`.html\` files to \`/skillet/\` that the human views in the PWA.
+These dashboards can send messages back to **your own inbox** when the human
+interacts with them (clicks a button, submits a form, etc.).
+
+From inside the iframe, call:
+\`\`\`js
+window.parent.postMessage(
+  { type: 'yeap-message', bot: 'ExactBotName', message: 'User clicked X' },
+  '*'
+)
+\`\`\`
+
+The PWA relays it to your inbox channel. You receive it as a normal channel
+message prefixed with \`[Dashboard]\`.
+
+**Tip:** When writing the HTML file from the shell, embed your bot name directly
+(you know it at write time — read it from the \`BOT_NAME\` env var or just
+hard-code it since you know your own name):
+\`\`\`bash
+# BOT_NAME is available as a shell env var inside your container
+cat > /skillet/dashboard.html <<HTMLEOF
+<button onclick="window.parent.postMessage({type:'yeap-message',bot:'$BOT_NAME',message:'clicked'},'*')">Notify me</button>
+HTMLEOF
+\`\`\`
+
+See \`files.md\` for a full working example.
+
 ## Observability
 
 All tool calls emit OpenTelemetry spans to Jaeger (infrastructure use only).
@@ -329,9 +358,9 @@ window.parent.postMessage(
 )
 \`\`\`
 
-Replace \`'YourBotName'\` with your exact bot name (same capitalisation as \`BOT_NAME\`
-in your environment). The message will arrive in your inbox channel prefixed with
-\`[Dashboard]\`.
+Replace \`'YourBotName'\` with your exact bot name. Since you write the HTML
+from your shell (where \`$BOT_NAME\` is set), you can embed it directly using
+heredoc interpolation rather than a placeholder.
 
 **Full example — a dashboard with a button that notifies you:**
 \`\`\`html
