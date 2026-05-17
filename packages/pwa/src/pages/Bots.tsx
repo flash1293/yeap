@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router'
 import { getBots, subscribeBot, unsubscribeBot, resetBot, compactBot } from '../api/orchestrator.js'
 import { getReminders, deleteReminder } from '../api/reminder.js'
 import { BotAvatar } from '../components/BotAvatar.js'
+import { AppSidebar } from '../components/AppSidebar.js'
 import { botStatusColor, botStatusLabel } from '../lib/botStatus.js'
 import type { Bot, Reminder } from '@yeap/shared'
 
@@ -20,6 +21,18 @@ export function Bots() {
   const [expandedReminders, setExpandedReminders] = useState<Record<string, boolean>>({})
   const [resetting, setResetting] = useState<Record<string, boolean>>({})
   const [compacting, setCompacting] = useState<Record<string, boolean>>({})
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  useEffect(() => {
+    function onResize() {
+      const mobile = window.innerWidth < 640
+      setIsMobile(mobile)
+      if (!mobile) setSidebarOpen(false)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   async function load() {
     const data = await getBots().catch(() => [] as Bot[])
@@ -111,34 +124,47 @@ export function Bots() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' }}>
-      {/* Top nav */}
-      <div
-        style={{
-          padding: '12px 20px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--surface)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-        }}
-      >
-        <span style={{ fontWeight: 700, fontSize: 16 }}>Bots</span>
-        <button
-          onClick={() => navigate('/files')}
+    <div style={{ display: 'flex', height: '100%', background: 'var(--bg)' }}>
+      {/* Mobile overlay */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 99 }}
+        />
+      )}
+
+      <AppSidebar
+        selectedFile={null}
+        currentPage="bots"
+        isOpen={!isMobile || sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      {/* Main content — offset by sidebar width on desktop */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', marginLeft: isMobile ? 0 : 260 }}>
+        {/* Top bar */}
+        <div
           style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            fontSize: 13,
-            padding: 0,
-            marginLeft: 'auto',
+            padding: '10px 12px',
+            borderBottom: '1px solid var(--border)',
+            background: 'var(--surface)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexShrink: 0,
           }}
         >
-          Files →
-        </button>
-      </div>
+          {isMobile && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 20, lineHeight: 1, padding: '0 4px' }}
+              aria-label="Open sidebar"
+            >
+              ☰
+            </button>
+          )}
+          <span style={{ fontWeight: 700, fontSize: 15 }}>Bots</span>
+        </div>
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
@@ -473,6 +499,7 @@ export function Bots() {
             </div>
           ))}
         </div>
+      </div>
       </div>
     </div>
   )
