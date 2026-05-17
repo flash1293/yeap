@@ -21,14 +21,14 @@ webhookRouter.post('/:topicId', async (c) => {
     // Not JSON — use empty object
   }
 
-  const systemToken = db.select().from(settings).where(eq(settings.key, 'mm_system_token')).get()?.value
+  const adminToken = db.select().from(settings).where(eq(settings.key, 'mm_admin_token')).get()?.value
   const teamId = db.select().from(settings).where(eq(settings.key, 'mm_team_id')).get()?.value
 
-  if (!systemToken || !teamId) {
+  if (!adminToken || !teamId) {
     return c.json({ error: 'Mattermost not configured — run setup first' }, 503)
   }
 
-  const channel = await getChannelByName(teamId, topicId, systemToken)
+  const channel = await getChannelByName(teamId, topicId, adminToken)
   if (!channel) {
     return c.json({ error: `Channel '${topicId}' not found in Mattermost` }, 404)
   }
@@ -37,7 +37,7 @@ webhookRouter.post('/:topicId', async (c) => {
     ? payload['text']
     : `**Webhook alert**\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``
 
-  await postMessage(channel.id, message, systemToken)
+  await postMessage(channel.id, message, adminToken)
 
   return new Response(null, { status: 204 })
 })
