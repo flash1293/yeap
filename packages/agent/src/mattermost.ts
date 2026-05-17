@@ -178,8 +178,47 @@ export async function listChannels(): Promise<Array<{ id: string; name: string; 
 
 export type MMPostHandler = (post: MMPost) => void
 
+/** Poll DM channels for new posts (bot accounts don't receive DM events via WebSocket). */
+function startDMPolling(onPost: MMPostHandler): void {
+  let lastPollAt = Date.now()
+
+  const poll = async () => {
+    try {
+      const teamId = await getTeamId()
+      if (!teamId) return
+      const res = await mmFetch(`/api/v4/users/${MM_USER_ID}/teams/${teamId}/channels`)
+      if (!res.ok) return
+      const channels = (await res.json()) as Array<{ id: string; type: string }>
+      const dmChannels = channels.filter((c) => c.type === 'D')
+
+      const since = lastPollAt
+      lastPollAt = Date.now()
+
+      for (const channel of dmChannels) {
+        const postsRes = await mmFetch(`/api/v4/channels/${channel.id}/posts?since=${since}`)
+        if (!postsRes.ok) continue
+        const data = (await postsRes.json()) as MMPostList
+        const posts = (data.order ?? []).map((id) => data.posts[id]!).filter(Boolean)
+        for (const post of posts) {
+          if (post.user_id === MM_USER_ID) continue
+          onPost(post)
+        }
+      }
+    } catch {
+      // ignore poll errors
+    }
+  }
+
+  setInterval(poll, 3000)
+}
+
 /** Connect to Mattermost WebSocket and call handler on new posts not from self. */
 export function startMattermostWebSocket(onPost: MMPostHandler): WebSocket {
+  startDMPolling(onPost)
+  return _connectWebSocket(onPost)
+}
+
+function _connectWebSocket(onPost: MMPostHandler): WebSocket {
   const wsUrl = MM_URL.replace(/^http/, 'ws') + '/api/v4/websocket'
   const ws = new WebSocket(wsUrl)
 
@@ -230,7 +269,7 @@ export function startMattermostWebSocket(onPost: MMPostHandler): WebSocket {
 
   ws.on('close', () => {
     console.log('[mm-ws] WebSocket closed, reconnecting in 5s...')
-    setTimeout(() => startMattermostWebSocket(onPost), 5000)
+    setTimeout(() => _connectWebSocket(onPost), 5000)
   })
 
   return ws
