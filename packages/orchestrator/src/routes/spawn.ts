@@ -254,7 +254,7 @@ spawnRouter.post('/clear-session/:name', async (c) => {
 
   // Best-effort: remove the session file while the container is still running.
   // If the container is already stopped this will fail silently — that's fine.
-  try { await execInBotContainer(name, 'rm -f /skillet/session.json', 5000) } catch { /* already gone */ }
+  try { await execInBotContainer(name, 'rm -f /skillet/session.jsonl /skillet/session.json', 5000) } catch { /* already gone */ }
 
   let container_id: string
   try {

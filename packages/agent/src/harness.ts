@@ -107,6 +107,7 @@ export function readSystemPrompt(): string {
 const pendingMessages: string[] = []
 let processing = false
 let compactNext = false
+let clearAfterRun = false
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let agentRef: any = null
 
@@ -119,18 +120,14 @@ function kickProcessor(): void {
   if (processing || pendingMessages.length === 0 || !agentRef) return
   processing = true
   const text = pendingMessages.shift()!
-  const isCompact = compactNext
-  if (isCompact) compactNext = false
+  if (compactNext) {
+    compactNext = false
+    clearAfterRun = true
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(agentRef.prompt(text) as Promise<void>)
     .catch((err: unknown) => console.error('[agent] prompt error:', err))
     .finally(() => {
-      if (isCompact && agentRef) {
-        // Clear message history after compaction — LLM has written summary to memory.md
-        console.log(`[agent] Compact run done — clearing session (was ${agentRef.state?.messages?.length ?? 0} messages)`)
-        agentRef.state.messages = []
-        saveSession([])
-      }
       processing = false
       kickProcessor()
     })
@@ -178,9 +175,23 @@ export async function createAgent(tools: any[]): Promise<any> {
         console.log('[agent] run complete, messages:', agent.state?.messages?.length ?? 0)
       }
       saveSession(agent.state?.messages ?? [])
+
+      // If this was a compact run, clear the session now that memory.md has been written
+      const doClear = clearAfterRun
+      if (doClear) {
+        clearAfterRun = false
+        console.log(`[agent] Post-compact clear — resetting session (was ${agent.state?.messages?.length ?? 0} messages)`)
+        agent.state.messages = []
+        saveSession([])
+        // Re-orient the bot so it reloads its memory on the next run
+        enqueueMessage('[YEAP SYSTEM] Your session has been compacted and cleared. Read /skillet/memory.md to restore context, then resume any pending tasks.')
+      }
+
       // Notify orchestrator so it can track compaction pressure
-      fetch(`${ORCHESTRATOR_URL}/spawn/compact-check/${encodeURIComponent(BOT_NAME)}`, { method: 'POST' })
-        .catch(() => { /* best-effort */ })
+      if (!doClear) {
+        fetch(`${ORCHESTRATOR_URL}/spawn/compact-check/${encodeURIComponent(BOT_NAME)}`, { method: 'POST' })
+          .catch(() => { /* best-effort */ })
+      }
     }
   })
 
