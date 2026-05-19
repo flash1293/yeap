@@ -231,7 +231,7 @@ Content-Type: application/json
 
 **Example — send an alert to a bot's inbox:**
 ```bash
-curl -X POST http://178.104.100.23:5173/api/orch/api/webhook/inbox-mybot \
+curl -X POST http://<host>:5173/api/orch/api/webhook/inbox-mybot \
   -H "Content-Type: application/json" \
   -d '{"text": "Deployment finished", "status": "success"}'
 ```
