@@ -4,7 +4,7 @@
  */
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
-import { triggerPrompt } from './harness.js'
+import { triggerPrompt, triggerCompact } from './harness.js'
 
 const BOT_NAME = process.env['BOT_NAME'] ?? 'UnknownBot'
 
@@ -14,9 +14,11 @@ app.get('/health', (c) => c.json({ status: 'ok', bot_name: BOT_NAME }))
 
 // Called by orchestrator's /spawn/compact/:name
 app.post('/compact', (c) => {
-  triggerPrompt(
+  triggerCompact(
     '[YEAP SYSTEM] Please compact your conversation context now. ' +
-    'Summarise completed work into /skillet/memory.md, then your context will be cleared.',
+    'Summarise all important facts, decisions, and ongoing tasks into /skillet/memory.md ' +
+    '(overwrite it). After this run your full message history will be cleared — ' +
+    'your next run will start fresh with only your system prompt and memory.md.',
   )
   return c.json({ ok: true })
 })

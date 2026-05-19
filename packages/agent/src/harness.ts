@@ -2,7 +2,7 @@
  * Agent harness: wraps pi-agent-core's Agent with session persistence,
  * a message queue, and the correct model/tool configuration.
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SKILLET = process.env['SKILLET_PATH'] ?? '/skillet'
@@ -79,6 +79,11 @@ export function loadSession(): any[] {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function saveSession(messages: any[]): void {
   try {
+    if (messages.length === 0) {
+      // Delete the session file so next restart treats this as a fresh start
+      try { rmSync(SESSION_FILE) } catch { /* already gone */ }
+      return
+    }
     const lines = messages.map((m) => JSON.stringify(m)).join('\n')
     writeFileSync(SESSION_FILE, lines + '\n', 'utf8')
   } catch (err) {
@@ -101,6 +106,7 @@ export function readSystemPrompt(): string {
 
 const pendingMessages: string[] = []
 let processing = false
+let compactNext = false
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let agentRef: any = null
 
@@ -113,10 +119,18 @@ function kickProcessor(): void {
   if (processing || pendingMessages.length === 0 || !agentRef) return
   processing = true
   const text = pendingMessages.shift()!
+  const isCompact = compactNext
+  if (isCompact) compactNext = false
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(agentRef.prompt(text) as Promise<void>)
     .catch((err: unknown) => console.error('[agent] prompt error:', err))
     .finally(() => {
+      if (isCompact && agentRef) {
+        // Clear message history after compaction — LLM has written summary to memory.md
+        console.log(`[agent] Compact run done — clearing session (was ${agentRef.state?.messages?.length ?? 0} messages)`)
+        agentRef.state.messages = []
+        saveSession([])
+      }
       processing = false
       kickProcessor()
     })
@@ -176,5 +190,11 @@ export async function createAgent(tools: any[]): Promise<any> {
 
 /** Trigger a prompt on the agent. Safe to call externally. */
 export function triggerPrompt(text: string): void {
+  enqueueMessage(text)
+}
+
+/** Trigger a compact run: LLM summarises to memory.md, then session is cleared. */
+export function triggerCompact(text: string): void {
+  compactNext = true
   enqueueMessage(text)
 }
