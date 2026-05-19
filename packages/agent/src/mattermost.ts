@@ -218,18 +218,54 @@ export function startMattermostWebSocket(onPost: MMPostHandler): WebSocket {
   return _connectWebSocket(onPost)
 }
 
+const WS_PING_INTERVAL_MS = 30_000   // send ping every 30s
+const WS_PONG_TIMEOUT_MS  = 15_000   // force-reconnect if no pong within 15s
+
 function _connectWebSocket(onPost: MMPostHandler): WebSocket {
   const wsUrl = MM_URL.replace(/^http/, 'ws') + '/api/v4/websocket'
   const ws = new WebSocket(wsUrl)
+  let pingTimer: ReturnType<typeof setInterval> | null = null
+  let pongTimer: ReturnType<typeof setTimeout> | null = null
+  let dead = false
+
+  function cleanup() {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null }
+    if (pongTimer) { clearTimeout(pongTimer); pongTimer = null }
+  }
+
+  function forceReconnect(reason: string) {
+    if (dead) return
+    dead = true
+    cleanup()
+    console.warn(`[mm-ws] ${reason} — forcing reconnect`)
+    try { ws.terminate() } catch { /* ignore */ }
+    setTimeout(() => _connectWebSocket(onPost), 5000)
+  }
 
   ws.on('open', () => {
     console.log('[mm-ws] Connected to Mattermost WebSocket')
-    // Authenticate
     ws.send(JSON.stringify({
       seq: 1,
       action: 'authentication_challenge',
       data: { token: MM_TOKEN },
     }))
+
+    // Start periodic ping to detect silent drops
+    pingTimer = setInterval(() => {
+      if (ws.readyState !== WebSocket.OPEN) {
+        forceReconnect('WebSocket no longer OPEN during ping')
+        return
+      }
+      ws.ping()
+      // Expect a pong back within WS_PONG_TIMEOUT_MS
+      pongTimer = setTimeout(() => {
+        forceReconnect('Pong timeout — connection silently dropped')
+      }, WS_PONG_TIMEOUT_MS)
+    }, WS_PING_INTERVAL_MS)
+  })
+
+  ws.on('pong', () => {
+    if (pongTimer) { clearTimeout(pongTimer); pongTimer = null }
   })
 
   ws.on('message', (rawData: WebSocket.RawData) => {
@@ -268,6 +304,8 @@ function _connectWebSocket(onPost: MMPostHandler): WebSocket {
   })
 
   ws.on('close', () => {
+    if (dead) return
+    cleanup()
     console.log('[mm-ws] WebSocket closed, reconnecting in 5s...')
     setTimeout(() => _connectWebSocket(onPost), 5000)
   })
