@@ -97,6 +97,8 @@ export async function createBotUser(
   adminToken: string,
   teamId: string,
 ): Promise<{ user_id: string; token: string }> {
+  let userId: string
+
   const botRes = await mmFetch('/api/v4/bots', {
     method: 'POST',
     token: adminToken,
@@ -104,10 +106,28 @@ export async function createBotUser(
   })
   if (!botRes.ok) {
     const text = await botRes.text()
-    throw new Error(`Failed to create MM bot ${username}: ${botRes.status} ${text}`)
+    // If the username already exists (e.g. from a previous test run that was cleaned up),
+    // look up the existing bot account, re-enable it, and reuse its user_id.
+    if (botRes.status === 400 && text.includes('username_exists')) {
+      const findRes = await mmFetch(`/api/v4/users/username/${username}`, { token: adminToken })
+      if (!findRes.ok) throw new Error(`Failed to find existing MM user ${username}: ${findRes.status}`)
+      const existing = (await findRes.json()) as { id: string }
+      userId = existing.id
+      // Re-activate the user (may have been soft-deleted by a previous teardown)
+      await mmFetch(`/api/v4/users/${userId}/active`, {
+        method: 'PUT',
+        token: adminToken,
+        body: JSON.stringify({ active: true }),
+      })
+      // Re-enable the bot account
+      await mmFetch(`/api/v4/bots/${userId}/enable`, { method: 'POST', token: adminToken })
+    } else {
+      throw new Error(`Failed to create MM bot ${username}: ${botRes.status} ${text}`)
+    }
+  } else {
+    const bot = (await botRes.json()) as { user_id: string }
+    userId = bot.user_id
   }
-  const bot = (await botRes.json()) as { user_id: string }
-  const userId = bot.user_id
 
   const tokenRes = await mmFetch(`/api/v4/users/${userId}/tokens`, {
     method: 'POST',
