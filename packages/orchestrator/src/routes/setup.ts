@@ -204,7 +204,7 @@ setupRouter.post('/init', async (c) => {
       .set({
         mattermost_user_id: coordMmUserId,
         mattermost_token: coordMmToken,
-        opencode_url: agentAdminUrl(body.coordinator_name),
+        admin_url: agentAdminUrl(body.coordinator_name),
       })
       .where(eq(bots.id, bot_id))
       .run()

@@ -3,13 +3,13 @@ import { getBotByName } from '../db/helpers.js'
 
 export const botProxyRouter = new Hono()
 
-// ALL /bots/:name/proxy/* — transparent proxy to the bot's opencode server
+// ALL /bots/:name/proxy/* — transparent proxy to the bot's admin server
 botProxyRouter.all('/:name/proxy/*', async (c) => {
   const name = c.req.param('name')
   const bot = getBotByName(name)
 
-  if (!bot?.opencode_url) {
-    return c.json({ error: `Bot "${name}" not found or has no opencode_url` }, 404)
+  if (!bot?.admin_url) {
+    return c.json({ error: `Bot "${name}" not found or has no admin_url` }, 404)
   }
 
   // Strip the /bots/:name/proxy prefix to get the target path
@@ -18,7 +18,7 @@ botProxyRouter.all('/:name/proxy/*', async (c) => {
   const targetPath = fullPath.slice(prefixEnd) || '/'
 
   const queryString = new URL(c.req.url).search
-  const targetUrl = `${bot.opencode_url}${targetPath}${queryString}`
+  const targetUrl = `${bot.admin_url}${targetPath}${queryString}`
 
   const method = c.req.method
   const hasBody = method !== 'GET' && method !== 'HEAD'
