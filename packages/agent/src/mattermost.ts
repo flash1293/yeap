@@ -178,6 +178,20 @@ export async function listChannels(): Promise<Array<{ id: string; name: string; 
 
 export type MMPostHandler = (post: MMPost) => void
 
+/** Deduplication set: tracks post IDs already delivered to the handler. */
+const _seenPostIds = new Set<string>()
+
+function deliverOnce(post: MMPost, onPost: MMPostHandler): void {
+  if (_seenPostIds.has(post.id)) return
+  _seenPostIds.add(post.id)
+  // Keep the set bounded — trim oldest entries when it grows large
+  if (_seenPostIds.size > 2000) {
+    const iter = _seenPostIds.values()
+    for (let i = 0; i < 500; i++) _seenPostIds.delete(iter.next().value!)
+  }
+  onPost(post)
+}
+
 /** Poll DM channels for new posts (bot accounts don't receive DM events via WebSocket). */
 function startDMPolling(onPost: MMPostHandler): void {
   let lastPollAt = Date.now()
@@ -201,7 +215,7 @@ function startDMPolling(onPost: MMPostHandler): void {
         const posts = (data.order ?? []).map((id) => data.posts[id]!).filter(Boolean)
         for (const post of posts) {
           if (post.user_id === MM_USER_ID) continue
-          onPost(post)
+          deliverOnce(post, onPost)
         }
       }
     } catch {
@@ -296,7 +310,7 @@ function _connectWebSocket(onPost: MMPostHandler): WebSocket {
       post.channel_name = data['channel_name'] as string
     }
 
-    onPost(post)
+    deliverOnce(post, onPost)
   })
 
   ws.on('error', (err) => {
