@@ -69,7 +69,7 @@ You do **not** receive notifications for messages you write yourself.
 ## Persistence
 
 Anything you want to remember across restarts must be stored in \`/skillet/\`.
-Your OpenCode session is automatically restored on restart.
+Your conversation history is automatically restored on restart.
 
 Keep a running \`/skillet/memory.md\` and read it at the start of every session.
 

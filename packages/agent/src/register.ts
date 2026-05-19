@@ -27,7 +27,7 @@ export async function registerBot(): Promise<{ is_new: boolean }> {
         body: JSON.stringify({
           name: BOT_NAME,
           role_description: BOT_ROLE,
-          opencode_url: selfAdminUrl(),
+          admin_url: selfAdminUrl(),
         }),
       })
       if (!res.ok) {

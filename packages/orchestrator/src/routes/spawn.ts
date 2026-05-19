@@ -153,7 +153,7 @@ async function resetBot(name: string, bot: typeof import('../db/schema.js').bots
     ? await createAndStartCoordinatorContainer(name, mmToken, mmUserId, teamId)
     : await createAndStartBotContainer(name, bot.role_description, mmToken, mmUserId, teamId)
   db.update(bots)
-    .set({ status: 'offline', session_id: null, last_seen: null, messages_since_compact: 0 })
+    .set({ status: 'offline', last_seen: null, messages_since_compact: 0 })
     .where(eq(bots.name, name))
     .run()
   return container_id
@@ -182,11 +182,11 @@ spawnRouter.post('/compact/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()
   if (!bot) return c.json({ error: `Bot '${name}' not found` }, 404)
-  if (!bot.opencode_url) {
+  if (!bot.admin_url) {
     return c.json({ error: 'Bot is not online' }, 409)
   }
 
-  const endpoint = `${bot.opencode_url}/compact`
+  const endpoint = `${bot.admin_url}/compact`
   try {
     const res = await fetch(endpoint, { method: 'POST' })
     if (!res.ok) {
@@ -223,9 +223,9 @@ spawnRouter.post('/compact-check/:name', async (c) => {
     .where(eq(bots.name, name))
     .run()
 
-  if (newCount >= AUTO_COMPACT_THRESHOLD && bot.opencode_url) {
+  if (newCount >= AUTO_COMPACT_THRESHOLD && bot.admin_url) {
     console.log(`[compact-check] Auto-compacting ${name} at ${newCount} messages`)
-    const endpoint = `${bot.opencode_url}/compact`
+    const endpoint = `${bot.admin_url}/compact`
     try {
       const res = await fetch(endpoint, { method: 'POST' })
       if (res.ok) {
@@ -246,8 +246,7 @@ spawnRouter.post('/compact-check/:name', async (c) => {
 })
 
 // POST /spawn/clear-session/:name — delete the standing session file and recreate the container.
-// The plugin will create a brand-new OpenCode session on startup, including the initial
-// orientation prompt. Unlike /reset, this guarantees no stale session history is reused.
+// Unlike /reset, this guarantees no stale session history is reused.
 spawnRouter.post('/clear-session/:name', async (c) => {
   const name = c.req.param('name')
   const bot = db.select().from(bots).where(eq(bots.name, name)).get()

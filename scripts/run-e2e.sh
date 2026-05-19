@@ -32,9 +32,13 @@ MM_ADMIN_USER="${MM_ADMIN_USER:-yeap-admin}"
 MM_ADMIN_EMAIL="${MM_ADMIN_EMAIL:-admin@yeap.local}"
 MM_TEAM_NAME="yeap"
 
-# OpenCode API config for DeepSeek V4 Flash Free (free model via OpenCode Zen)
-OPENCODE_BASE_URL="https://opencode.ai/zen/v1"
-BOT_MODEL="opencode/deepseek-v4-flash-free"
+# Locally, MM SiteURL has no subpath, so the internal URL has no /chat prefix.
+# (On production the docker-compose default of http://mattermost:8065/chat is correct.)
+export MATTERMOST_INTERNAL_URL="http://mattermost:8065"
+
+# OpenCode Go API config — DeepSeek V4 Flash via OpenCode Go
+OPENCODE_BASE_URL="https://opencode.ai/zen/go/v1"
+BOT_MODEL="opencode/deepseek-v4-flash"
 
 COMPOSE="docker compose -f infra/docker-compose.yml --env-file .env"
 
@@ -90,9 +94,20 @@ print(json.dumps({
   'base_url': '${OPENCODE_BASE_URL}',
 }))
 ")
-SETUP_RESP=$(curl -sf -X POST "${ORCHESTRATOR_URL}/setup/init" \
+MAX_SETUP_WAIT=60
+SETUP_WAIT=0
+SETUP_RESP=""
+until SETUP_RESP=$(curl -sf -X POST "${ORCHESTRATOR_URL}/setup/init" \
   -H 'Content-Type: application/json' \
-  -d "$SETUP_BODY")
+  -d "$SETUP_BODY" 2>/dev/null); do
+  if [ $SETUP_WAIT -ge $MAX_SETUP_WAIT ]; then
+    echo "ERROR: /setup/init failed after ${MAX_SETUP_WAIT}s"
+    exit 1
+  fi
+  echo "  setup not ready yet, retrying in 5s... (${SETUP_WAIT}s)"
+  sleep 5
+  SETUP_WAIT=$((SETUP_WAIT + 5))
+done
 echo "  setup response: $SETUP_RESP"
 
 # ── Wait for coordinator to come online ───────────────────────────────────────

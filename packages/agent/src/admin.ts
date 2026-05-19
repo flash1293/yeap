@@ -21,23 +21,7 @@ app.post('/compact', (c) => {
   return c.json({ ok: true })
 })
 
-// Legacy compat: orchestrator used to call /session/:id/compact and /session/:id/prompt_async
-app.post('/session/:id/compact', (c) => {
-  triggerPrompt(
-    '[YEAP SYSTEM] Please compact your conversation context now. ' +
-    'Summarise completed work into /skillet/memory.md.',
-  )
-  return c.json({ ok: true })
-})
-
-app.post('/session/:id/prompt_async', async (c) => {
-  const body = await c.req.json<{ parts?: Array<{ type: string; text?: string }> }>()
-  const text = body.parts?.filter((p) => p.type === 'text').map((p) => p.text ?? '').join('\n') ?? ''
-  if (text.trim()) triggerPrompt(text)
-  return new Response(null, { status: 204 })
-})
-
-// Direct message injection (new API)
+// Message injection
 app.post('/message', async (c) => {
   const body = await c.req.json<{ text: string }>()
   if (body.text?.trim()) triggerPrompt(body.text)

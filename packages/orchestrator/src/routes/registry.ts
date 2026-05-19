@@ -45,7 +45,7 @@ registryRouter.post('/bots', async (c) => {
 
   db.update(bots)
     .set({
-      ...(body.opencode_url !== undefined ? { opencode_url: body.opencode_url } : {}),
+      ...(body.admin_url !== undefined ? { admin_url: body.admin_url } : {}),
       role_description: body.role_description || row.role_description,
       status: 'online',
       last_seen: Date.now(),
@@ -67,8 +67,7 @@ registryRouter.patch('/bots/:name', async (c) => {
 
   const updates: Partial<typeof bots.$inferInsert> = { last_seen: Date.now() }
   if (body.status !== undefined) updates.status = body.status
-  if (body.session_id !== undefined) updates.session_id = body.session_id
-  if (body.opencode_url !== undefined) updates.opencode_url = body.opencode_url
+  if (body.admin_url !== undefined) updates.admin_url = body.admin_url
 
   db.update(bots).set(updates).where(eq(bots.name, name)).run()
 

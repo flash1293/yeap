@@ -7,11 +7,10 @@ export const bots = sqliteTable('bots', {
   role_description: text('role_description').notNull(),
   status: text('status').notNull().default('offline'),
   last_seen: integer('last_seen'),
-  // opencode_url repurposed as agent admin server URL (http://yeap-bot-<slug>:4096)
-  opencode_url: text('opencode_url'),
+  // admin_url: agent admin server URL (http://yeap-bot-<slug>:4096)
+  admin_url: text('opencode_url'),
   // host_port kept as nullable for backward compat; unused in new design
   host_port: integer('host_port'),
-  session_id: text('session_id'),
   is_coordinator: integer('is_coordinator', { mode: 'boolean' }).notNull().default(false),
   messages_since_compact: integer('messages_since_compact').notNull().default(0),
   last_compact_at: integer('last_compact_at'),

@@ -9,9 +9,8 @@ export type Bot = {
   role_description: string
   status: BotStatus
   last_seen: number | null
-  opencode_url: string | null
+  admin_url: string | null
   host_port: number | null
-  session_id: string | null
   is_coordinator: boolean
   subscriptions: string[]
   messages_since_compact: number
@@ -103,15 +102,14 @@ export type LoginResponse = { token: string }
 export type RegisterBotPayload = {
   name: string
   role_description: string
-  opencode_url?: string
+  admin_url?: string
 }
 export type RegisterBotResponse = { bot: Bot }
 
 export type UpdateBotPayload = {
   status?: BotStatus
-  session_id?: string
   last_seen?: number
-  opencode_url?: string
+  admin_url?: string
 }
 
 export type UpdateStatusPayload = { name: string; status: BotStatus }
